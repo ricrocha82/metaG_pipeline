@@ -4,7 +4,7 @@ process COVERM_MAPPING {
     // for depth calculation across all binners.
     tag "$meta.id"
     label 'process_high'
-    publishDir "${params.outdir}/00_coverm_mapping/${meta.id}", mode: 'copy', pattern: "*.tsv"
+    publishDir "${params.binning_outdir}/00_coverm_mapping/${meta.id}", mode: 'copy', pattern: "*.tsv"
 
     container "/fs/project/PAS1117/modules/singularity/CoverM-0.7.0.sif"
 

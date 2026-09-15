@@ -1,7 +1,7 @@
 process METABAT2 {
     tag "$meta.id"
     label 'process_medium'
-    publishDir "${params.outdir}/01_binning/${meta.id}/metabat2", mode: 'copy'
+    publishDir "${params.binning_outdir}/01_binning/${meta.id}/metabat2", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/MetaBAT2-2.14.sif"
 
@@ -18,7 +18,7 @@ process METABAT2 {
     metabat2 -i ${assembly} -a depth.txt \\
         -o metabat2_bins/${meta.id}_bin \\
         -t ${task.cpus} \\
-        -m ${params.min_contig_size ?: 1500} \\
+        -m ${params.binning_min_contig_size ?: 1500} \\
 +       --seed ${params.binning_seed ?: 1}
     """
 }
@@ -46,7 +46,7 @@ process COUNT_CONTIGS {
 //     errorStrategy 'ignore'
 //     tag "$meta.id"
 //     label 'process_high'
-//     publishDir "${params.outdir}/01_binning/${meta.id}/comebin", mode: 'copy'
+//     publishDir "${params.binning_outdir}/01_binning/${meta.id}/comebin", mode: 'copy'
 
 //     container "/fs/project/PAS1117/modules/singularity/comebin-1.0.4.sif" 
 
@@ -86,7 +86,7 @@ process COMEBIN {
     errorStrategy 'ignore'
     tag "$meta.id"
     label 'process_high'
-    publishDir "${params.outdir}/01_binning/${meta.id}/comebin", mode: 'copy'
+    publishDir "${params.binning_outdir}/01_binning/${meta.id}/comebin", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/comebin-1.0.4.sif"
 
@@ -140,7 +140,7 @@ process SEMIBIN2 {
     // PAS1117. Run with -profile conda (see README).
     tag "$meta.id"
     label 'process_high'
-    publishDir "${params.outdir}/01_binning/${meta.id}/semibin2", mode: 'copy'
+    publishDir "${params.binning_outdir}/01_binning/${meta.id}/semibin2", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/semibin2-2.3.0.sif"
 
@@ -174,7 +174,7 @@ process SEMIBIN2 {
     
 //     tag "$meta.id"
 //     label 'process_high'
-//     publishDir "${params.outdir}/01_binning/${meta.id}/vamb", mode: 'copy'
+//     publishDir "${params.binning_outdir}/01_binning/${meta.id}/vamb", mode: 'copy'
 
 //     container "/fs/project/PAS1117/modules/singularity/VAMB-3.0.2.sif"
 

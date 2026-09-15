@@ -1,7 +1,7 @@
 process QUAST {
     tag "$meta.id"
     label 'process_medium'
-    publishDir "${params.outdir}/07_quast/${meta.id}", mode: 'copy'
+    publishDir "${params.qc_outdir}/07_quast/${meta.id}", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/quast-5.3.0.sif"
 
@@ -16,6 +16,6 @@ process QUAST {
     quast.py ${assembly} \\
         -o ${meta.id}_quast \\
         -t ${task.cpus} \\
-        --min-contig ${params.min_contig_size ?: 1000}
+        --min-contig ${params.qc_min_contig_size ?: 1000}
     """
 }

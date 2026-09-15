@@ -2,7 +2,7 @@ process PRODIGAL {
     tag "$meta.id"
     label 'process_low'
 
-    publishDir "${params.outdir}/09_prodigal/${meta.id}", mode: 'copy'
+    publishDir "${params.qc_outdir}/09_prodigal/${meta.id}", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/Prodigal-2.6.3.sif"
 
@@ -30,7 +30,7 @@ process BAKTA {
     tag "$meta.id"
     label 'process_medium'
 
-    publishDir "${params.outdir}/09_bakta/${meta.id}", mode: 'copy'
+    publishDir "${params.qc_outdir}/09_bakta/${meta.id}", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/Bakta-1.12.0.sif"
 

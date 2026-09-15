@@ -3,7 +3,7 @@ process CHECKM2_DOWNLOAD_DB {
     // DIAMOND reference (uniref100.KO.1.dmnd) -- NOT the CheckM v1
     // CheckMdata format you have at /fs/project/PAS1117/modules/CheckMdata.
     label 'process_low'
-    storeDir "${params.outdir}/checkm2_db"
+    storeDir "${params.binning_outdir}/checkm2_db"
 
     container "/fs/project/PAS1117/modules/singularity/CheckM2-1.0.1.sif"
 
@@ -22,7 +22,7 @@ process CHECKM2_FINAL {
     // versus the earlier per-sample CHECKM2 runs which existed mainly to
     // feed dRep's genomeInfo (quality-based representative selection).
     label 'process_high'
-    publishDir "${params.outdir}/06_checkm2_final", mode: 'copy'
+    publishDir "${params.binning_outdir}/06_checkm2_final", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/CheckM2-1.0.1.sif"
 
@@ -50,7 +50,7 @@ process CHECKM2_FINAL {
 process CHECKM2 {
     tag "$meta.id"
     label 'process_high'
-    publishDir "${params.outdir}/03_checkm2/${meta.id}", mode: 'copy'
+    publishDir "${params.binning_outdir}/03_checkm2/${meta.id}", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/CheckM2-1.0.1.sif"
 
@@ -83,7 +83,7 @@ process CHECKM2 {
 process CHECKM2_SING {
     tag "${meta.id}_${meta.binner}"
     label 'process_high'
-    publishDir "${params.outdir}/01_binning/${meta.id}/checkm2", mode: 'copy'
+    publishDir "${params.binning_outdir}/01_binning/${meta.id}/checkm2", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/CheckM2-1.0.1.sif"
 

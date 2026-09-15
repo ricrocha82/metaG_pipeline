@@ -1,7 +1,7 @@
 process FASTQC_RAW {
     tag "$meta.id"
     label 'process_low'
-    publishDir "${params.outdir}/01_fastqc_raw/${meta.id}", mode: 'copy'
+    publishDir "${params.qc_outdir}/01_fastqc_raw/${meta.id}", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/FastQC-0.11.8.sif"
 
@@ -21,7 +21,7 @@ process FASTQC_RAW {
 process FASTQC_TRIMMED {
     tag "$meta.id"
     label 'process_low'
-    publishDir "${params.outdir}/04_fastqc_trimmed/${meta.id}", mode: 'copy'
+    publishDir "${params.qc_outdir}/04_fastqc_trimmed/${meta.id}", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/FastQC-0.11.8.sif"
 

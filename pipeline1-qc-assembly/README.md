@@ -9,20 +9,27 @@ required. The pipeline fails fast at startup if any is missing, rather
 than silently skipping a step you didn't mean to skip.
 
 Feeds into `pipeline2-binning-mags` (steps 10-14) -- see that pipeline's
-README for how they connect.
+README for how they connect. Can also be run as part of the repo-root
+umbrella pipeline alongside pipeline2 and pipeline3 -- see the root
+`README.md`.
 
 ## Usage
 
 ```bash
 nextflow run main.nf -profile singularity,slurm \
-    --input assets/samplesheet.csv \
-    --outdir results \
+    --qc_input assets/samplesheet.csv \
+    --qc_outdir results \
     --host_fasta /path/to/pig_genome.fa \
     --phix_fasta /fs/project/PAS1117/bioinformatic_tools/bbmap_38.51/resources/phix174_ill.ref.fa.gz \
     --adapters_fasta /fs/project/PAS1117/bioinformatic_tools/bbmap_38.51/resources/adapters.fa \
     --kraken2_db /path/to/kraken2_db \
     -resume
 ```
+
+**Note:** `--input`/`--outdir`/`--min_contig_size` were renamed to
+`--qc_input`/`--qc_outdir`/`--qc_min_contig_size` so this pipeline can run
+alongside pipeline2 (which has its own `--min_contig_size`) in the root
+umbrella pipeline without one silently overriding the other.
 
 ## Required inputs -- still open
 
@@ -61,7 +68,9 @@ see item 3 above).
 ## Output -> Pipeline 2 handoff
 
 At the end of the run, this pipeline auto-generates
-`${outdir}/pipeline2_samplesheet.csv` with columns
+`${qc_outdir}/pipeline2_samplesheet.csv` with columns
 `sample,assembly,short_reads_1,short_reads_2` -- this is the exact
 samplesheet format `pipeline2-binning-mags` expects. Just point pipeline 2's
-`--input` at that file.
+`--binning_input` at that file (or, in the umbrella pipeline, this handoff
+happens in-memory automatically -- the CSV is still written for
+inspection/resume purposes).

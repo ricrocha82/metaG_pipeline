@@ -17,7 +17,7 @@ process FASTA_TO_CONTIG2BIN {
 process DASTOOL {
     tag "$meta.id"
     label 'process_high'
-    publishDir "${params.outdir}/02_dastool/${meta.id}", mode: 'copy'
+    publishDir "${params.binning_outdir}/02_dastool/${meta.id}", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/DAS_Tool-1.1.7.sif"
 

@@ -24,7 +24,7 @@ process POOL_CHECKM2_GENOMEINFO {
     // single genomeInfo.csv (genome,completeness,contamination) dRep
     // requires, with "genome" values matching pooled_bins/*.fa exactly.
     label 'process_low'
-    publishDir "${params.outdir}/03_checkm2", mode: 'copy'
+    publishDir "${params.binning_outdir}/03_checkm2", mode: 'copy'
 
     input:
     path checkm2_results

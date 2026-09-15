@@ -36,37 +36,13 @@
 //   --enhanced_bam    path to the single enhanced sorted BAM file
 // ============================================================
 
-// ------ Default Parameters ------
-params.threads            = 40
-params.detect             = "genomad"              // 'genomad' | 'both'
-params.input_csv          = "${launchDir}/data/samples.csv"
-params.outdir             = "${launchDir}/results"
-params.virus              = "${params.outdir}/virus"
-params.vs2                = "${params.virus}/vs2"
-params.genomad            = "${params.virus}/genomad"
-params.genomad_db         = "/fs/project/PAS1117/ricardo/genomad_db"
-params.virus_length       = 5000
-params.virus_score        = 0.7
-params.virus_completeness = 0
-params.combined           = "${params.virus}/combined"
-params.checkv             = "${params.virus}/checkv"
-params.cluster            = "${params.virus}/cluster"
-params.mapping            = "${params.virus}/mapping"
-params.abundance          = "${params.virus}/abundance"
-params.microdiversity     = "${params.virus}/microdiversity"
-params.skip_microdiversity = false                 // set to true to skip MetaPop
-params.length             = 5000                   // min contig length for FILTER_CHECKV
-params.short_reads        = null                   // assembly filename used as short-read representative
-params.hybrid_reads       = null                   // assembly filename for hybrid method (optional)
-params.long_reads         = null                   // assembly filename for long-read method (optional)
-
-// ------ Loader input params (null = not loading from disk) ------
-params.checkv_dir         = null   // dir with *_final_viral_contigs.fasta
-params.cluster_dir        = null   // dir with *.self-blastn.clusters.fna
-params.cluster_suffix     = "_final_viral_contigs.fasta.self-blastn.clusters.fna"  // suffix stripped from filename to recover sample_id
-params.bam_dir            = null   // dir with *_sorted.bam
-params.enhanced_ref       = null   // single path: enhanced clusters.fna
-params.enhanced_bam       = null   // single path: enhanced sorted BAM
+// All default params (viromics_input, viromics_outdir, virus_length,
+// loader dirs, etc.) now live in nextflow.config's params{} block --
+// moved out of the script body so CLI/config overrides (--viromics_outdir,
+// -params-file, etc.) actually take effect. A `params.x = default` line
+// here would unconditionally reassign params.x when the script runs,
+// silently clobbering anything set on the command line or in a config
+// file -- see nextflow.config for the fix and details.
 
 // ------ Module Imports ------
 include { VIRSORTER }                              from './modules/virus_detection.nf'
@@ -107,7 +83,7 @@ include { METAPOP_MICRODIVERSITY }                 from './modules/microdiversit
 workflow LOAD_SAMPLES {
     main:
         samples_ch = Channel
-            .fromPath(params.input_csv)
+            .fromPath(params.viromics_input)
             .splitCsv(header: true)
             .map { row ->
                 // Classify as paired-end if raw_read2 is present and non-empty
@@ -605,6 +581,44 @@ workflow FULL_PIPELINE {
     } else {
         log.info "=== FULL PIPELINE - skipping Microdiversity ==="
     }
+}
+
+// ------------------------------------------------------------
+// UMBRELLA ENTRY: same chain as FULL_PIPELINE, but accepts
+// samples in-memory (e.g. assemblies from pipeline1-qc-assembly)
+// instead of always loading params.viromics_input from disk.
+// Used by the root umbrella main.nf -- not a `-entry` CLI target
+// (entry workflows can't take `take:` inputs from the CLI, so
+// FULL_PIPELINE above is left untouched for that purpose).
+// ------------------------------------------------------------
+workflow VIROMICS {
+    take:
+        samples_ch   // tuple(sample_id, read_path, read_type, raw_read1, raw_read2) -- pass null to read from params.viromics_input instead
+
+    main:
+        if (samples_ch == null) {
+            LOAD_SAMPLES()
+            samples_ch = LOAD_SAMPLES.out.samples
+        }
+
+        RUN_DETECTION(samples_ch)
+        RUN_CHECKV(RUN_DETECTION.out.filt_fasta)
+        RUN_CLUSTERING(RUN_CHECKV.out.filtered_fasta)
+        RUN_MAPPING(samples_ch, RUN_CLUSTERING.out.cluster_fasta)
+        RUN_ABUNDANCE(RUN_MAPPING.out.bam_files)
+        RUN_ENHANCED(samples_ch, RUN_CLUSTERING.out.fasta_list)
+        if (!params.skip_microdiversity) {
+            RUN_MICRODIVERSITY(
+                samples_ch,
+                RUN_MAPPING.out.bam_files,
+                RUN_CLUSTERING.out.cluster_fasta,
+                RUN_ENHANCED.out.enhanced_ref,
+                RUN_ENHANCED.out.enhanced_bam
+            )
+        }
+
+    emit:
+        cluster_fasta = RUN_CLUSTERING.out.cluster_fasta   // tuple(sample_id, fasta) -- per-sample vOTU reference
 }
 
 

@@ -6,16 +6,24 @@ taxonomy, and MAG abundance.
 Deliberately decoupled from `pipeline1-qc-assembly`: this pipeline only
 needs an assembly + a pair of clean reads per sample, so it can be re-run
 independently (e.g. re-refining bins with different DAS_Tool parameters)
-without re-running QC/assembly.
+without re-running QC/assembly. Can also be run as part of the repo-root
+umbrella pipeline alongside pipeline1 and pipeline3 -- see the root
+`README.md`.
 
 ## Usage
 
 ```bash
 nextflow run main.nf -profile singularity,slurm \
-    --input /path/to/pipeline1/results/pipeline2_samplesheet.csv \
-    --outdir results \
+    --binning_input /path/to/pipeline1/results/pipeline2_samplesheet.csv \
+    --binning_outdir results \
     -resume
 ```
+
+**Note:** `--input`/`--outdir`/`--min_contig_size` were renamed to
+`--binning_input`/`--binning_outdir`/`--binning_min_contig_size` so this
+pipeline can run alongside pipeline1 (which has its own
+`--min_contig_size`) in the root umbrella pipeline without one silently
+overriding the other.
 
 `--gtdbtk_db` already defaults to the path you gave
 (`/fs/project/PAS1117/modules/GTDB-Tk/gtdbtk_data/gtdbtk_r95_data.tar.gz`).
@@ -45,7 +53,7 @@ have a CheckM2 database somewhere.
    DIAMOND-based reference are structurally different. If `--checkm2_db`
    isn't supplied, the pipeline downloads CheckM2's database on first run
    via `checkm2 database --download`, cached under
-   `${outdir}/checkm2_db` so it only happens once. This needs outbound
+   `${binning_outdir}/checkm2_db` so it only happens once. This needs outbound
    internet access from the compute node — confirm your SLURM
    partition/queue allows it (it did for your BUSCO/Kraken2 test runs
    earlier, so likely fine).

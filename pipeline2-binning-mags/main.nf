@@ -37,16 +37,22 @@ include { CHECKM2_SING as CHECKM2_SING_METABAT2 } from './modules/checkm2.nf'
 include { CHECKM2_SING as CHECKM2_SING_SEMIBIN2 } from './modules/checkm2.nf'
 include { CHECKM2_SING as CHECKM2_SING_COMEBIN  } from './modules/checkm2.nf'
 
-workflow {
+workflow BINNING_MAGS {
+    take:
+        ch_input   // [meta, assembly, short_reads_1, short_reads_2] -- pass null to read from params.binning_input instead
+
+    main:
 
     // ---- 0. Input samplesheet: sample,assembly,short_reads_1,short_reads_2 ----
-    ch_input = Channel
-        .fromPath(params.input)
-        .splitCsv(header: true)
-        .map { row ->
-            def meta = [id: row.sample]
-            [meta, file(row.assembly), file(row.short_reads_1), file(row.short_reads_2)]
-        }
+    if (ch_input == null) {
+        ch_input = Channel
+            .fromPath(params.binning_input, checkIfExists: true)
+            .splitCsv(header: true)
+            .map { row ->
+                def meta = [id: row.sample]
+                [meta, file(row.assembly), file(row.short_reads_1), file(row.short_reads_2)]
+            }
+    }
 
     // ---- 1. Mapping (per-sample) ----
     COVERM_MAPPING(ch_input)
@@ -166,4 +172,13 @@ workflow {
         .map { it.join(' ') }
 
     COVERM_GENOME_MATRIX(DREP.out.representatives, ch_coupled_reads)
+
+    emit:
+        representatives = DREP.out.representatives   // dereplicated MAG dir, for downstream use
+        gtdbtk          = GTDBTK.out.results         // taxonomy assignments
+}
+
+// ---- Standalone entry point: `nextflow run pipeline2-binning-mags/main.nf` ----
+workflow {
+    BINNING_MAGS(null)
 }
