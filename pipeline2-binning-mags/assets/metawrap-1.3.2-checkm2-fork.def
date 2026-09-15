@@ -1,0 +1,110 @@
+Bootstrap: docker
+From: continuumio/miniconda3:latest
+
+%post
+    set -eu
+    export PATH=/opt/conda/bin:$PATH
+
+    conda config --add channels defaults
+    conda config --add channels conda-forge
+    conda config --add channels bioconda
+    conda config --add channels ursky
+
+    conda install -y mamba git
+
+    # MetaWRAP dependencies and original package.
+    mamba create -y \
+        --name metawrap-env \
+        --channel ursky \
+        --channel bioconda \
+        --channel conda-forge \
+        metawrap-mg=1.3.2
+
+    # CheckM2 environment -- must be named exactly "checkm2-env" since
+    # the fork's scripts reference it by name, which we then replace with
+    # the full path below to avoid mamba finding the host conda instead.
+    mamba create -y \
+        --name checkm2-env \
+        --channel conda-forge \
+        --channel bioconda \
+        checkm2 \
+        libgomp
+
+    # Install the modified MetaWRAP scripts.
+    git clone https://github.com/masalgar/metaWRAP.git /opt/metawrap-checkm2
+
+    chmod -R a+rX /opt/metawrap-checkm2
+    chmod +x /opt/metawrap-checkm2/bin/metawrap
+    chmod +x /opt/metawrap-checkm2/bin/metawrap-modules/*.sh
+    chmod +x /opt/metawrap-checkm2/bin/metawrap-scripts/*.sh
+
+    # CRITICAL FIX: the fork calls `mamba run -n checkm2-env checkm2 ...`
+    # which makes mamba look up "checkm2-env" by name in the active conda
+    # installation. Inside Apptainer, the host home directory is
+    # bind-mounted by default, so mamba finds the HOST's conda
+    # (e.g. /users/PAS1117/ricrocha82/miniconda3/envs/checkm2-env) which
+    # doesn't exist -- not the container's own env at /opt/conda/envs/checkm2-env.
+    # Fix: replace the name-based lookup with an explicit full path so
+    # mamba always finds the container's own environment regardless of
+    # what conda installations exist on the host.
+    sed -i 's|mamba run -n checkm2-env checkm2|/opt/conda/envs/checkm2-env/bin/checkm2|g' \
+        /opt/metawrap-checkm2/bin/metawrap-modules/bin_refinement.sh
+    sed -i 's|mamba run -n checkm2-env checkm2|/opt/conda/envs/checkm2-env/bin/checkm2|g' \
+        /opt/metawrap-checkm2/bin/metawrap-modules/reassemble_bins.sh
+
+    # Verify the replacements took
+    grep -c "mamba run -n checkm2-env" \
+        /opt/metawrap-checkm2/bin/metawrap-modules/bin_refinement.sh \
+        /opt/metawrap-checkm2/bin/metawrap-modules/reassemble_bins.sh \
+        && echo "ERROR: mamba run calls still present -- sed replacement failed" \
+        && exit 1 || true
+
+    grep "/opt/conda/envs/checkm2-env/bin/checkm2" \
+        /opt/metawrap-checkm2/bin/metawrap-modules/bin_refinement.sh \
+        | head -3
+
+    test -x /opt/metawrap-checkm2/bin/metawrap
+    test -x /opt/conda/envs/checkm2-env/bin/checkm2
+
+    conda clean -a -y
+
+%environment
+    export PATH=/opt/metawrap-checkm2/bin:/opt/conda/envs/checkm2-env/bin:/opt/conda/envs/metawrap-env/bin:/opt/conda/bin:$PATH
+    export CHECKM2DB=/checkm2_db/uniref100.KO.1.dmnd
+    export XDG_CACHE_HOME=/tmp/.cache
+    export MPLCONFIGDIR=/tmp/mplconfig
+    export HOME=/tmp
+
+%runscript
+    exec /opt/metawrap-checkm2/bin/metawrap "$@"
+
+%test
+    test -x /opt/metawrap-checkm2/bin/metawrap
+    test -x /opt/conda/envs/checkm2-env/bin/checkm2
+    /opt/metawrap-checkm2/bin/metawrap -v
+    /opt/conda/envs/checkm2-env/bin/checkm2 --help >/dev/null
+
+%labels
+    Tool metaWRAP
+    Version 1.3.2-checkm2-fork
+    Fork masalgar/metaWRAP
+    Fix mamba-run-replaced-with-full-path
+
+%help
+    Container for metaWRAP v1.3.2 (masalgar/metaWRAP fork, CheckM2 edition).
+    bin_refinement module only.
+
+    Usage:
+      apptainer exec --bind /path/to/checkm2db:/checkm2_db metawrap.sif \
+          metawrap bin_refinement \
+          -o output_dir -t threads \
+          -A bins_A -B bins_B -C bins_C \
+          -c 50 -x 10
+
+    The fork scripts now call /opt/conda/envs/checkm2-env/bin/checkm2
+    directly (full path) instead of `mamba run -n checkm2-env`, so the
+    host conda installation cannot interfere with environment resolution.
+
+
+
+# apptainer build /fs/project/PAS1117/modules/singularity/metawrap-1.3.2-checkm2-fork.sif /fs/project/PAS1117/ricardo/pipeline2-binning-mags/assets/metawrap-1.3.2-checkm2-fork.def

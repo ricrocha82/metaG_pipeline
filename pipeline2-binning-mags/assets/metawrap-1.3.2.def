@@ -1,0 +1,64 @@
+Bootstrap: docker
+From: continuumio/miniconda3:latest
+
+%post
+    export PATH=/opt/conda/bin:$PATH
+
+
+    conda config --add channels defaults
+    conda config --add channels conda-forge
+    conda config --add channels bioconda
+    conda config --add channels ursky
+
+    # Installing the full official metawrap-mg package (not hand-picking
+    # dependencies) -- this is a single bundled package maintained by the
+    # metaWRAP author (ursky) that includes both the wrapper scripts and
+    # maintainer-tested compatible versions of everything metaWRAP's
+    # modules need: https://github.com/bxlab/metaWRAP
+    #
+    # This container is scoped to bin_refinement USE (not all metaWRAP
+    # modules) -- but installing the full package rather than
+    # hand-picking bin_refinement's documented dependencies
+    # (https://github.com/bxlab/metaWRAP/blob/master/installation/dependancies.md#bin_refinement)
+    # avoids risking a missing implicit dependency metaWRAP assumes but
+    # doesn't document. Other modules (assembly, quant_bins, blobology,
+    # classify_bins, kraken, read_qc, annotate_bins) are present in the
+    # container but not configured with their databases -- only
+    # bin_refinement is expected to work out of the box here.
+    conda install -y mamba
+    mamba create -y --name metawrap-env \
+        --channel ursky --channel bioconda --channel conda-forge \
+        metawrap-mg=1.3.2
+
+    conda clean -a -y
+
+%environment
+    export PATH=/opt/conda/envs/metawrap-env/bin:$PATH
+
+%runscript
+    exec metaWRAP "$@"
+
+%labels
+    Tool metaWRAP
+    Scope "bin_refinement module only -- other modules present but unconfigured"
+    Source https://github.com/bxlab/metaWRAP
+
+%help
+    Container for metaWRAP, built for the bin_refinement module
+    specifically. Full metawrap-mg package installed (maintainer-tested
+    dependency versions), but only bin_refinement is expected to work
+    out of the box -- other modules need their own database
+    configuration (kraken_db, refseq_db, human_db, etc.) not set up here.
+
+    Usage:
+      singularity exec metawrap.sif metaWRAP bin_refinement \
+          -o output_dir -t threads \
+          -A bins_folder_A -B bins_folder_B -C bins_folder_C \
+          -c 50 -x 10
+
+    Verify after building:
+      singularity exec metawrap.sif metaWRAP -v
+      singularity exec metawrap.sif metaWRAP bin_refinement -h
+      singularity exec metawrap.sif which checkm bwa samtools
+
+# apptainer build /fs/project/PAS1117/modules/singularity/metawrap-1.3.2.sif /fs/project/PAS1117/ricardo/pipeline2-binning-mags/assets/metawrap-1.3.2.def

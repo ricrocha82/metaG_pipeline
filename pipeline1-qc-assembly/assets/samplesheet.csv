@@ -1,0 +1,5 @@
+sample,short_reads_1,short_reads_2
+b_2A,/fs/project/PAS1117/ricardo/pig_burn/host_depletion/raw_reads/metaG/b_2A_S485_R1_001.fastq.gz,/fs/project/PAS1117/ricardo/pig_burn/host_depletion/raw_reads/metaG/b_2A_S485_R2_001.fastq.gz
+b_3S,/fs/project/PAS1117/ricardo/pig_burn/host_depletion/raw_reads/metaG/b_3S_S483_R1_001.fastq.gz,/fs/project/PAS1117/ricardo/pig_burn/host_depletion/raw_reads/metaG/b_3S_S483_R2_001.fastq.gz
+b_4S,/fs/project/PAS1117/ricardo/pig_burn/host_depletion/raw_reads/metaG/b_4S_S484_R1_001.fastq.gz,/fs/project/PAS1117/ricardo/pig_burn/host_depletion/raw_reads/metaG/b_4S_S484_R2_001.fastq.gz
+t_mG_5,/fs/project/PAS1117/ricardo/pig_burn/host_depletion/raw_reads/metaG/t_mG_5_S482_R1_001.fastq.gz,/fs/project/PAS1117/ricardo/pig_burn/host_depletion/raw_reads/metaG/t_mG_5_S482_R2_001.fastq.gz

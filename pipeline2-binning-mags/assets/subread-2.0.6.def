@@ -1,0 +1,29 @@
+Bootstrap: docker
+From: condaforge/miniforge3:latest
+
+%labels
+    Author ricardo.PAS1117
+    Tool subread
+    Version 2.0.6
+    Source https://bioconda.github.io/recipes/subread/README.html
+
+%post
+    set -e
+    mamba create -y -n subread_env -c conda-forge -c bioconda subread=2.0.6
+    mamba clean -a -y
+    test -x /opt/conda/envs/subread_env/bin/featureCounts
+
+%environment
+    export PATH="/opt/conda/envs/subread_env/bin:${PATH}"
+    export HOME=/tmp
+
+%runscript
+    exec featureCounts "$@"
+
+%test
+    . /opt/conda/etc/profile.d/conda.sh
+    conda activate subread_env
+    featureCounts -v
+
+
+# apptainer build /fs/project/PAS1117/modules/singularity/subread-2.0.6.sif /fs/project/PAS1117/ricardo/pipeline2-binning-mags/assets/subread-2.0.6.def

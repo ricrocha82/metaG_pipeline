@@ -1,0 +1,401 @@
+#!/usr/bin/env nextflow
+
+// params.cpu = 4
+
+// Parameters
+params.threads = 40
+params.detect = "genomad" // 'both'
+params.input_csv = "${launchDir}/data/samples.csv"
+params.outdir = "${launchDir}/results"
+params.virus = "${params.outdir}/virus"
+params.vs2 = "${params.virus}/vs2"
+params.genomad = "${params.virus}/genomad"
+params.genomad_db = "/fs/project/PAS1117/ricardo/genomad_db"
+params.virus_length = 5000
+params.virus_score = 0.7
+params.virus_completeness = 0
+params.combined = "${params.virus}/combined"
+params.checkv = "${params.virus}/checkv"
+params.cluster = "${params.virus}/cluster"
+params.read_mode = 'auto'   // 'auto' | 'long' | 'short'
+params.mapping = "${params.virus}/mapping"
+params.abundance = "${params.virus}/abundance"
+params.microdiversity = "${params.virus}/microdiversity"
+// params.short_reads = '2019_02_viral_fraction.nextera_mspd_asm'
+// params.hybrid_reads = '2019_02_viral_fraction.nextera__WECR10_EXP-PBC001_barcode10__hspd_asm'
+// params.short_reads = null
+// params.hybrid_reads = null
+// params.long_reads = null
+
+// Virus detection modules
+include { VIRSORTER } from './modules/virus_detection.nf' 
+include { GENOMAD_END_TO_END } from './modules/virus_detection.nf'
+include { COMBINE_VS2_GENOMAD } from './modules/virus_detection.nf'
+// include { FILTER_VS2_GENOMAD } from './modules/virus_detection.nf'
+include { SELECT_CONTIGS } from './modules/virus_detection.nf'
+include { SELECT_CONTIGS_GENOMAD } from './modules/virus_detection.nf'
+include { EXTRACT_CONTIGS } from './modules/virus_detection.nf' 
+include { CHECKV_END_TO_END } from './modules/checkv.nf'
+include { FILTER_CHECKV } from './modules/checkv.nf'
+include { CLUSTERING } from './modules/clustering.nf'
+// Virus mapping modules
+include { MAPPING_LONG_READS } from './modules/clustering.nf'
+include { MAPPING_SHORT_READS } from './modules/clustering.nf'
+include { SAMTOOLS } from './modules/clustering.nf'
+include { COVERM_ABUNDANCE } from './modules/clustering.nf'
+include { CREATE_ABUND_TB } from './modules/clustering.nf'
+include { METAPOP_MICRODIVERSITY } from './modules/microdiversity.nf'
+// for enhanced virome
+include { CONCAT_FASTA } from './modules/clustering.nf'
+include { CLUSTERING as CLUSTERING_ENH }  from './modules/clustering.nf'
+include { MAPPING_SHORT_READS as MAPPING_SHORT_READS_ENH} from './modules/clustering.nf'
+include { SAMTOOLS as SAMTOOLS_ENH} from './modules/clustering.nf'
+include { COVERM_ABUNDANCE as COVERM_ABUNDANCE_ENH} from './modules/clustering.nf'
+
+log.info """\
+         VIRION 3 - N F   P I P E L I N E
+    ============================================
+    reads               : ${params.input_csv}
+    threads             : ${params.threads}
+    detect              : ${params.detect}
+    vs2                 : ${params.vs2}
+    genomad             : ${params.genomad}
+    genomadDB           : ${params.genomad_db}
+    virus length        : ${params.virus_length}
+    virus_score         : ${params.virus_score}
+    virus_completeness  : ${params.virus_completeness}
+    combined            : ${params.combined}
+    checkv              : ${params.checkv}
+    mapping             : ${params.mapping}
+    abundance           : ${params.abundance}
+    microdiversity      : ${params.microdiversity}
+    short-reads         : ${params.short_reads}
+    hybrid-reads        : ${params.hybrid_reads}
+    """
+    .stripIndent()
+
+workflow { 
+    samples_ch = Channel
+                .fromPath(params.input_csv)
+                .splitCsv(header:true)
+                .map { row -> 
+                    // Determine read type based on presence of raw_read2
+                    def read_type = (row.raw_read2 && row.raw_read2.trim() != "") ? "paired" : "single"
+                    tuple(
+                        row.sample_id, 
+                        file(row.read_path),
+                        read_type,
+                        row.raw_read1 ? file(row.raw_read1) : null,
+                        row.raw_read2 && row.raw_read2.trim() != "" ? file(row.raw_read2) : null
+                    )
+                }
+
+    // ------------------ Virus discovery ------------------
+
+    // Create genomad database channel
+    genomad_db_ch = Channel.value(params.genomad_db)
+    
+    // Step 1: Run VirSorter2 and geNomad on filtered contigs
+    // For the initial steps, we only need sample_id and read_path
+    initial_samples_ch = samples_ch.map { sample_id, read_path, read_type, raw_read1, raw_read2 ->
+        tuple(sample_id, read_path)
+            }
+
+    if( params.detect == 'both' ) {
+        virsorter_ch = VIRSORTER(initial_samples_ch)
+        genomad_ch = GENOMAD_END_TO_END(initial_samples_ch, genomad_db_ch)
+        // virsorter_ch = VIRSORTER(samples_ch)
+        // genomad_ch = GENOMAD_END_TO_END(samples_ch, genomad_db_ch)
+
+        // Step 2: Combine results from both tools per sample
+        // combined_virus_ch = virsorter_ch.viral_score
+        //     .join(genomad_ch.virus_summary, by: 0)
+        //     .map { sample_id, vs2_file, genomad_file -> 
+        //         tuple(sample_id, vs2_file, genomad_file)
+        //     }
+
+        // Upstream channels
+        // Upstream channels as tuples (sample_id, path)
+        vs2_scores_ch  = virsorter_ch.out.viral_score // (sid, path "<work>/<sid>/final-viral-score.tsv")
+        gmd_summary_ch = genomad_ch.out.virus_summary // (sid, path "<work>/<sid>/<sid>_summary/<sid>_virus_summary.tsv")
+
+        // Pair VS2 and geNomad by sample_id
+        paired_ch = vs2_scores_ch.join(gmd_summary_ch, by: 0)
+            .map { sample_id, viral_score, virus_summary ->
+                // Pass the directories that the combiner expects to scan
+                tuple(sample_id, viral_score, virus_summary)
+            }
+            
+        // Now call combine with those lists (order doesn't matter, we just need the dependency)
+        combined_tbl_ch = COMBINE_VS2_GENOMAD(paired_ch)
+
+        // combined_tbl_ch = COMBINE_VS2_GENOMAD( Channel.value(true) )
+
+        // Step 3: Filter combined results per sample
+        filter_input_ch = initial_samples_ch
+            .combine(combined_tbl_ch.combined_df.flatten())
+            .map { sample_id, read_path, combined_file -> 
+                tuple(sample_id, combined_file, read_path)
+            }
+        
+        // filtered_ch = FILTER_VS2_GENOMAD(filter_input_ch)
+
+        // Step 3: Filter combined results per sample
+        selected_ch = SELECT_CONTIGS( filter_input_ch )
+    }
+    else if( params.detect == 'genomad' ) {
+        
+        // genomad-only: build contig list straight from geNomad’s summary
+        // (sample_id contigs.txt)
+
+        genomad_ch = GENOMAD_END_TO_END(initial_samples_ch, genomad_db_ch)
+        gmd_summary_ch = genomad_ch.virus_summary  // (sample_id, path "<work>/<sample_id>/<sample_id>_summary/_virus_summary.tsv")
+        genomad_virus_fna = genomad_ch.genomad_virus
+    
+        // Now call combine with those lists (order doesn't matter, we just need the dependency)
+        // combined_tbl_ch = COMBINE_VS2_GENOMAD(paired_ch)
+
+        // combined_tbl_ch = COMBINE_VS2_GENOMAD( Channel.value(true) )
+
+        // Step 3: Filter combined results per sample
+        filter_input_ch = initial_samples_ch
+                            .join(gmd_summary_ch, by: 0)
+                            .map { sample_id, read_path, virus_summary -> tuple(sample_id, virus_summary, read_path) }
+        
+        // filtered_ch = FILTER_VS2_GENOMAD(filter_input_ch)
+
+        // Step 3: Filter combined results per sample
+        selected_ch = SELECT_CONTIGS_GENOMAD( filter_input_ch )
+    }
+    else {
+    error "Invalid --detect value: '${params.detect}'. Use 'genomad' or 'both'."
+    }
+
+    extract_in_ch = selected_ch
+                    .join(initial_samples_ch, by: 0)                      // -> (sample_id, contigs.txt, read_path)
+                    .join(genomad_virus_fna, by: 0)
+                    .map { sample_id, contigs, read_path, genomad_virus -> tuple(sample_id, contigs, read_path, genomad_virus) }
+    
+    filtered_ch = EXTRACT_CONTIGS(extract_in_ch)
+
+    checkv_ch = CHECKV_END_TO_END(filtered_ch.filt_fasta)
+
+    checkv_pair_ch = checkv_ch.quality_summary
+                        .join(checkv_ch.checkv_fasta, by: 0)                // (sid, qsum, fasta)
+                        .map { sample_id, qsum, fasta -> tuple(sample_id, qsum, fasta) }
+
+    filter_check_ch = FILTER_CHECKV(checkv_pair_ch)
+
+    clustering_ch = CLUSTERING(filter_check_ch.filtered_checkv_fasta)
+
+    // Keep only the file path
+    fasta_files_ch = clustering_ch.cluster_fasta.map { sid, f -> f }
+    // Collect all paths into one list
+    fasta_list_ch  = fasta_files_ch.collect()
+
+
+    // ------------------ Mapping / Abundance ------------------
+
+    // Mapping workflow - conditional based on read type
+    // Prepare mapping input by combining cluster results with sample info
+    mapping_input_ch = samples_ch
+        .join(clustering_ch.cluster_fasta, by: 0)   // -> (sid, read_path, read_type, raw1, raw2, cluster_fasta)
+        .map { sample_id, read_path, read_type, raw_read1, raw_read2, cluster_fasta ->
+            if (read_type == "paired" && raw_read1 && raw_read2) {
+                // Short reads (paired-end)
+                tuple(sample_id, cluster_fasta, raw_read1, raw_read2, "short")
+            } else if (raw_read1) {
+                // Long reads (single file)
+                tuple(sample_id, cluster_fasta, raw_read1, "long")
+            } else {
+                // Fallback: use assembly file as reference
+                tuple(sample_id, cluster_fasta, read_path, "long")
+            }
+        }
+
+    // Split channels based on read type
+    long_reads_ch = mapping_input_ch
+        .filter { it[it.size()-1] == "long" }
+        .map { sample_id, cluster_fasta, ref_fasta, read_type ->
+            tuple(sample_id, cluster_fasta, ref_fasta)
+        }
+
+    short_reads_ch = mapping_input_ch
+        .filter { it[it.size()-1] == "short" }
+        .map { sample_id, cluster_fasta, ref_fasta1, ref_fasta2, read_type ->
+            tuple(sample_id, cluster_fasta, ref_fasta1, ref_fasta2)
+        }
+
+    // Run appropriate mapping process
+    long_mapping_ch = MAPPING_LONG_READS(long_reads_ch)
+    short_mapping_ch = MAPPING_SHORT_READS(short_reads_ch)
+
+    // Combine mapping results
+    all_mapping_ch = long_mapping_ch.sam_file
+        .mix(short_mapping_ch.sam_file)
+
+    // Run samtools on all mapping results
+    samtools_ch = SAMTOOLS(all_mapping_ch)
+
+    // coverm_input_ch = samtools_ch.bam_file
+
+    // Run coverm on all mapping results and bam files
+    coverm_ch = COVERM_ABUNDANCE(samtools_ch.bam_file)
+    coverm_paths = coverm_ch.coverm_output.map{ it[1] }.collect()
+
+    // abund_tb_ch = CREATE_ABUND_TB( Channel.value(true) )
+    abund_tb_ch = CREATE_ABUND_TB( coverm_paths )
+
+    // ------------------ “Enhanced” Virome ------------------
+
+    // 1) Concatenate all clustered FASTAs (from clustering_ch) you collected above
+    concat_ch = CONCAT_FASTA(fasta_list_ch)   // emits path "concatenated_all.fasta"
+    enhanced_pair_ch = concat_ch.concat_fasta.map { ref -> tuple('enhanced', ref) }
+    clustering_all_ch = CLUSTERING_ENH(enhanced_pair_ch)  // emits: ( 'enhanced', <*.clusters.fna> )
+
+    enhanced_ref_ch = clustering_all_ch.cluster_fasta
+        .filter { sid, ref -> sid == 'enhanced' }
+        .map    { sid, ref -> ref }
+
+    // enhanced_map_in_ch = samples_ch
+    //                         .filter { sid, read_path, read_type, r1, r2 ->
+    //                             sid == params.short_reads && read_type == 'paired' && r1 && r2
+    //                         }
+    //                         .map { sid, read_path, read_type, r1, r2 -> tuple("enhanced", r1, r2) } // (sid, r1, r2)
+    //                         .combine(enhanced_ref_ch)                                        // single ref path
+    //                         .map { sid, r1, r2, ref -> tuple(sid, ref, r1, r2) }             // (sid, ref_fasta, r1, r2)
+
+    short_reads_id_ch = samples_ch
+                                .filter { sid, read_path, read_type, r1, r2 ->
+                                    read_type == 'paired' && r1 && r2
+                                }
+                                .map { sid, read_path, read_type, r1, r2 -> sid }
+                                .first()
+
+    enhanced_map_in_ch = short_reads_id_ch
+                                .combine(samples_ch)   // (short_id, sid, read_path, read_type, r1, r2)
+                                .filter { short_id, sid, read_path, read_type, r1, r2 ->
+                                    sid == short_id && read_type == 'paired' && r1 && r2
+                                }
+                                .map { short_id, sid, read_path, read_type, r1, r2 ->
+                                    tuple("enhanced", r1, r2)    // (sid='enhanced', r1, r2)
+                                }
+                                .combine(enhanced_ref_ch)
+                                .map { sid, r1, r2, ref ->
+                                    tuple(sid, ref, r1, r2)      // (sid, ref_fasta, r1, r2)
+                                }
+
+    short_mapping_enh_ch = MAPPING_SHORT_READS_ENH(enhanced_map_in_ch)
+    samtools_enh_ch = SAMTOOLS_ENH(short_mapping_enh_ch.sam_file)   // emits (sid, <enh_sorted.bam>)
+    coverm_enh_ch = COVERM_ABUNDANCE_ENH(samtools_enh_ch.bam_file)
+    
+    // ------------------ Microdiversity ------------------------
+    // short_reads_bams = samtools_ch.bam_file
+    //                         .filter { sid, bam -> sid == params.short_reads }
+    //                         .map    { sid, bam -> bam }
+    //                         .collect()
+
+    // short_reads_ref = clustering_ch.cluster_fasta
+    //                         .filter { sid, ref -> sid == params.short_reads }
+    //                         .map    { sid, ref -> ref }
+    
+    // short_pack = short_reads_bams.combine(short_reads_ref)
+    //                         .map { bams, ref -> tuple('short', bams, ref) }
+
+    // hybrid method: assembly_1 against assembly_1 cluster
+    // hybrid_bams = samtools_ch.bam_file
+    //                         .filter { sid, bam -> sid == params.hybrid_reads }
+    //                         .map    { sid, bam -> bam }
+    //                         .collect()
+
+    // hybrid_ref = clustering_ch.cluster_fasta
+    //                         .filter { sid, ref -> sid == params.hybrid_reads }
+    //                         .map    { sid, ref -> ref }
+    
+    // hybrid_pack = hybrid_bams.combine(hybrid_ref)
+    //                         .map { bams, ref -> tuple('hybrid',  bams, ref) }
+
+    // enhanced method: chosen short-read sample (e.g., assembly_2) against ENHANCED cluster
+    enhanced_bams = samtools_enh_ch.bam_file
+                            .map { sid, bam -> bam }
+                            .collect()
+
+    enhanced_pack = enhanced_bams.combine(enhanced_ref_ch)
+                            .map { bams, ref -> tuple('enhanced',bams, ref) }
+
+
+    // params.short_reads is a file path; sample_id is what samtools_ch and clustering_ch use as key
+    // Extract just the filename from params.short_reads
+    short_reads_name = file(params.short_reads).name   // e.g. "WEC_2019_02_..._mspd_asm.fa"
+    // Resolve sample_id by matching the filename of read_path against params.short_reads filename
+    short_reads_sid = samples_ch
+                            .filter { sid, read_path, read_type, r1, r2 ->
+                                read_path.name == short_reads_name   // compare filenames only
+                            }
+                            .map { sid, read_path, read_type, r1, r2 -> sid }  // keep only sample_id
+                            .first()                                           // single value channel
+
+    // Collect all BAMs for the short_reads sample_id
+    short_reads_bams = short_reads_sid
+                            .combine(samtools_ch.bam_file)                    // (short_sid, sid, bam)
+                            .filter { short_sid, sid, bam -> sid == short_sid } // keep only matching sid
+                            .map    { short_sid, sid, bam -> bam }            // keep only the bam path
+                            .collect()
+
+    // Get the cluster fasta for the short_reads sample_id
+    short_reads_ref = short_reads_sid
+                            .combine(clustering_ch.cluster_fasta)             // (short_sid, sid, ref)
+                            .filter { short_sid, sid, ref -> sid == short_sid } // keep only matching sid
+                            .map    { short_sid, sid, ref -> ref }            // keep only the ref path
+
+    // Pack short method inputs: label + bams list + reference fasta
+    short_pack = short_reads_bams.combine(short_reads_ref)
+                            .map { bams, ref -> tuple('short', bams, ref) }
+
+    // hybrid method: only runs when --hybrid_reads is provided
+    if ( params.hybrid_reads ) {
+        // filter samtools BAMs for the hybrid assembly sample
+        // Extract just the filename from params.hybrid_reads
+        hybrid_reads_name = file(params.hybrid_reads).name   // e.g. "ill_WEC_..._hspd_asm.fa"
+
+        // Resolve sample_id by matching filename of read_path against params.hybrid_reads filename
+        hybrid_reads_sid = samples_ch
+                                .filter { sid, read_path, read_type, r1, r2 ->
+                                    read_path.name == hybrid_reads_name  // compare filenames only
+                                }
+                                .map { sid, read_path, read_type, r1, r2 -> sid } // keep only sample_id
+                                .first()                                           // single value channel
+
+        // Collect all BAMs for the hybrid_reads sample_id
+        hybrid_bams = hybrid_reads_sid
+                                .combine(samtools_ch.bam_file)                    // (hybrid_sid, sid, bam)
+                                .filter { hybrid_sid, sid, bam -> sid == hybrid_sid } // keep only matching sid
+                                .map    { hybrid_sid, sid, bam -> bam }           // keep only the bam path
+                                .collect()
+
+        // Get the cluster fasta for the hybrid_reads sample_id
+        hybrid_ref = hybrid_reads_sid
+                                .combine(clustering_ch.cluster_fasta)             // (hybrid_sid, sid, ref)
+                                .filter { hybrid_sid, sid, ref -> sid == hybrid_sid } // keep only matching sid
+                                .map    { hybrid_sid, sid, ref -> ref }           // keep only the ref path
+
+        // Pack hybrid inputs: same structure as short_pack
+        hybrid_pack = hybrid_bams.combine(hybrid_ref)
+                                .map { bams, ref -> tuple('hybrid', bams, ref) }
+
+        // Mix short + hybrid + enhanced into MetaPop
+        methods_ch = short_pack.mix(hybrid_pack).mix(enhanced_pack)
+    } else {
+         // no hybrid reads: only short + enhanced
+        methods_ch = short_pack.mix(enhanced_pack)
+    }
+    
+
+    // ------------------ Run MetaPop per method ------------------
+    // methods_ch = short_pack.mix(hybrid_pack).mix(enhanced_pack)
+
+    // methods_ch = short_pack.mix(enhanced_pack)
+
+    metapop_all = METAPOP_MICRODIVERSITY(methods_ch)
+
+}

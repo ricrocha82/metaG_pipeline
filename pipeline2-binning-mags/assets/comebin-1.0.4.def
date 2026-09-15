@@ -1,0 +1,38 @@
+Bootstrap: docker
+From: condaforge/miniforge3:latest
+
+%labels
+    Author ricardo.PAS1117
+    Tool COMEBin
+    Version 1.0.4
+    Source https://github.com/ziyewang/COMEBin/releases/tag/1.0.4
+
+%post
+    set -e
+
+    # Create the env with COMEBin pinned to the exact release version.
+    # COMEBin is published on Bioconda, which tracks the GitHub release tags,
+    # so pinning here matches the 1.0.3 tag exactly.
+    mamba create -y -n comebin_env -c conda-forge -c bioconda comebin=1.0.4
+    mamba clean -a -y
+
+    # Sanity check the binary resolved and is on PATH inside the env
+    /opt/conda/envs/comebin_env/bin/run_comebin.sh -h || true
+
+%environment
+    export PATH="/opt/conda/envs/comebin_env/bin:${PATH}"
+    # Avoid matplotlib/config writes hitting a read-only container filesystem
+    export MPLCONFIGDIR=/tmp/mplconfig
+    export HOME=/tmp
+
+%runscript
+    exec run_comebin.sh "$@"
+
+%test
+    . /opt/conda/etc/profile.d/conda.sh
+    conda activate comebin_env
+    command -v run_comebin.sh
+    test -x "$(command -v run_comebin.sh)"
+
+
+# apptainer build /fs/project/PAS1117/modules/singularity/comebin-1.0.4.sif /fs/project/PAS1117/ricardo/pipeline2-binning-mags/assets/comebin-1.0.4.def

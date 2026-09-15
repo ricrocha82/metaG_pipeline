@@ -216,3 +216,92 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+# ==========================================
+# Nextflow
+# ==========================================
+
+# Nextflow working directory
+work/
+
+# Nextflow internal/cache directory
+.nextflow/
+
+# Nextflow logs
+.nextflow.log
+.nextflow.log.*
+
+# Nextflow execution history
+.nextflow.history
+
+
+# ==========================================
+# VS Code
+# ==========================================
+
+.vscode/
+
+# If you later want to share selected VS Code settings,
+# remove the line above and use something like:
+# .vscode/*
+# !.vscode/extensions.json
+# !.vscode/settings.json
+
+
+# ==========================================
+# OS-generated files
+# ==========================================
+
+.DS_Store
+Thumbs.db
+
+
+# ==========================================
+# Python
+# ==========================================
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+.venv/
+venv/
+env/
+
+
+# ==========================================
+# R
+# ==========================================
+
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+
+
+# ==========================================
+# Temporary files
+# ==========================================
+
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+
+# ==========================================
+# Logs
+# ==========================================
+
+*.log
+
+
+# ==========================================
+# Local environment / secrets
+# ==========================================
+
+.env
+.env.*
+!.env.example

@@ -1,0 +1,36 @@
+Bootstrap: docker
+From: condaforge/miniforge3:latest
+
+%labels
+    Author ricardo.PAS1117
+    Tool SemiBin2
+    Version 2.3.0
+    Source https://github.com/BigDataBiology/SemiBin/releases/tag/v2.3.0
+
+%post
+    set -e
+
+    # CPU-only build. Bioconda's semibin package does not ship GPU-enabled
+    # PyTorch -- if GPU support is ever needed, this env would need
+    # pytorch-gpu + cuda added explicitly (see SemiBin docs), which is a
+    # separate, heavier image. This is fine for CPU-based SLURM jobs.
+    mamba create -y -n semibin_env -c conda-forge -c bioconda semibin=2.3.0
+    mamba clean -a -y
+
+    /opt/conda/envs/semibin_env/bin/SemiBin2 --version || true
+
+%environment
+    export PATH="/opt/conda/envs/semibin_env/bin:${PATH}"
+    export MPLCONFIGDIR=/tmp/mplconfig
+    export HOME=/tmp
+
+%runscript
+    exec SemiBin2 "$@"
+
+%test
+    . /opt/conda/etc/profile.d/conda.sh
+    conda activate semibin_env
+    SemiBin2 --version
+
+
+# apptainer build /fs/project/PAS1117/modules/singularity/semibin2-2.3.0.sif /fs/project/PAS1117/ricardo/pipeline2-binning-mags/assets/semibin2-2.3.0.def

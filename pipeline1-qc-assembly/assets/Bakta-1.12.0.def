@@ -1,0 +1,76 @@
+Bootstrap: docker
+From: quay.io/biocontainers/bakta:1.12.0--pyhdfd78af_0
+
+%labels
+    Author Ricardo R. Pavan
+    Software Bakta
+    Version 1.12.0
+    Source https://github.com/oschwengers/bakta
+
+%environment
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+
+%post
+    set -e
+
+    # Confirm that the expected executables are available in the base image.
+    command -v bakta
+    command -v bakta_db
+    command -v diamond
+    command -v amrfinder
+
+    # Record the installed Bakta version inside the image.
+    bakta --version > /opt/bakta-container-version.txt 2>&1
+
+%test
+    set -e
+
+    bakta --version
+    bakta --help >/dev/null
+    bakta_db --help >/dev/null
+    diamond version
+    amrfinder --version
+
+%help
+    Bakta 1.12.0 container
+
+    Build with Apptainer:
+
+        apptainer build Bakta-1.12.0.sif Bakta-1.12.0.def
+
+    Build with Singularity:
+
+        singularity build Bakta-1.12.0.sif Bakta-1.12.0.def
+
+    Verify:
+
+        apptainer exec Bakta-1.12.0.sif bakta --version
+        apptainer exec Bakta-1.12.0.sif bakta_db --help
+
+    Bakta requires an external database. Example:
+
+        apptainer exec Bakta-1.12.0.sif \
+            bakta_db download \
+            --output /path/to/bakta_db \
+            --type light
+
+    Run annotation:
+
+        apptainer exec Bakta-1.12.0.sif \
+            bakta \
+            --db /path/to/bakta_db/db-light \
+            --output results \
+            --prefix sample \
+            --threads 8 \
+            assembly.fasta
+
+%runscript
+    exec bakta "$@"
+
+# apptainer build /fs/project/PAS1117/modules/singularity/Bakta-1.12.0.sif /fs/project/PAS1117/ricardo/pipeline1-qc-assembly/assets/Bakta-1.12.0.def
+
+# apptainer exec /fs/project/PAS1117/modules/singularity/Bakta-1.12.0.sif \
+#     bakta_db download \
+#     --output /fs/project/PAS1117/bioinformatic_tools/bakta/ \
+#     --type light

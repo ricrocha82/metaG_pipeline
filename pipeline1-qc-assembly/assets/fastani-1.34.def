@@ -1,0 +1,31 @@
+Bootstrap: docker
+From: continuumio/miniconda3:latest
+
+%labels
+    Author ricardo
+    Tool fastANI
+    Purpose Strain-level ANI comparison for pig_burn PAO1/P.aeruginosa analysis
+
+%post
+    # Create conda env with fastANI pinned to a specific version for reproducibility
+    conda create -y -n fastani -c bioconda -c conda-forge fastani=1.34
+    conda clean -a -y
+
+    # Make sure env is on PATH at build time for sanity check
+    export PATH=/opt/conda/envs/fastani/bin:$PATH
+    fastANI --version
+
+%environment
+    export PATH=/opt/conda/envs/fastani/bin:$PATH
+    export LC_ALL=C
+
+%runscript
+    exec fastANI "$@"
+
+%test
+    export PATH=/opt/conda/envs/fastani/bin:$PATH
+    fastANI --version
+
+
+# cd /fs/project/PAS1117/modules/singularity/
+# apptainer build --fakeroot fastani-1.34.sif /fs/project/PAS1117/ricardo/pipeline1-qc-assembly/assets/fastani-1.34.def

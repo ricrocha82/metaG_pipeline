@@ -1,0 +1,38 @@
+Bootstrap: docker
+From: condaforge/miniforge3:latest
+
+%labels
+    Author ricardo.PAS1117
+    Tool VAMB
+    Version 5.0.4
+    Source https://github.com/RasmussenLab/vamb/releases/tag/v5.0.4
+
+%post
+    set -e
+
+    # NOTE: VAMB's own docs generally recommend installing from source/pip
+    # rather than Bioconda, since Bioconda can lag behind the latest commits.
+    # However, Bioconda currently carries 5.0.4 exactly, matching this
+    # release tag, so pinning via conda here is safe and reproducible.
+    # If a future version isn't on Bioconda yet, switch this block to:
+    #   pip install "vamb @ https://github.com/RasmussenLab/vamb/archive/refs/tags/v5.0.4.tar.gz"
+    mamba create -y -n vamb_env -c conda-forge -c bioconda vamb=5.0.4
+    mamba clean -a -y
+
+    /opt/conda/envs/vamb_env/bin/vamb --version || true
+
+%environment
+    export PATH="/opt/conda/envs/vamb_env/bin:${PATH}"
+    export MPLCONFIGDIR=/tmp/mplconfig
+    export HOME=/tmp
+
+%runscript
+    exec vamb "$@"
+
+%test
+    . /opt/conda/etc/profile.d/conda.sh
+    conda activate vamb_env
+    vamb --version
+
+
+# apptainer build /fs/project/PAS1117/modules/singularity/vamb-5.0.4.sif /fs/project/PAS1117/ricardo/pipeline2-binning-mags/assets/vamb-5.0.4.def
