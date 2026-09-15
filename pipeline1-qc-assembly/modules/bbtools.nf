@@ -4,7 +4,7 @@
 process BBDUK_TRIM {
     tag "$meta.id"
     label 'process_medium'
-    publishDir "${params.outdir}/02_bbduk_trim/${meta.id}", mode: 'copy', pattern: "*.stats"
+    publishDir "${params.qc_outdir}/02_bbduk_trim/${meta.id}", mode: 'copy', pattern: "*.stats"
 
     container "/fs/project/PAS1117/modules/singularity/BBTools-39.31.sif"
 
@@ -35,7 +35,7 @@ process BBDUK_TRIM {
 process BBMAP_HOST_REMOVAL {
     tag "$meta.id"
     label 'process_high'
-    publishDir "${params.outdir}/03_host_removal/${meta.id}", mode: 'copy', pattern: "*.stats"
+    publishDir "${params.qc_outdir}/03_host_removal/${meta.id}", mode: 'copy', pattern: "*.stats"
 
     container "/fs/project/PAS1117/modules/singularity/BBTools-39.31.sif"
 
@@ -68,8 +68,8 @@ process BBDUK_PHIX_REMOVAL {
     tag "$meta.id"
     label 'process_medium'
 
-    publishDir "${params.outdir}/03b_phix_removal/${meta.id}", mode: 'copy', pattern: "*.stats"
-    publishDir "${params.outdir}/04a_clean_reads", mode: 'copy', pattern: "*_clean_{1,2}.fastq.gz"
+    publishDir "${params.qc_outdir}/03b_phix_removal/${meta.id}", mode: 'copy', pattern: "*.stats"
+    publishDir "${params.qc_outdir}/04a_clean_reads", mode: 'copy', pattern: "*_clean_{1,2}.fastq.gz"
 
     container "/fs/project/PAS1117/modules/singularity/BBTools-39.31.sif"
 

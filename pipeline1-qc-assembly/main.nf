@@ -43,16 +43,22 @@ include { PRODIGAL; BAKTA                         } from './modules/prodigal_pro
 include { GENE_ABUNDANCE                           } from './modules/gene_abundance.nf'
 include { HOST_PHIX_SUMMARY                        } from './modules/host_phix_summary.nf'
 
-workflow {
+workflow QC_ASSEMBLY {
+    take:
+        ch_input   // [meta, short_reads_1, short_reads_2] -- pass null to read from params.qc_input instead
+
+    main:
 
     // ---- 0. Input samplesheet: sample,short_reads_1,short_reads_2 ----
-    ch_input = Channel
-        .fromPath(params.input)
-        .splitCsv(header: true)
-        .map { row ->
-            def meta = [id: row.sample]
-            [meta, file(row.short_reads_1), file(row.short_reads_2)]
-        }
+    if (ch_input == null) {
+        ch_input = Channel
+            .fromPath(params.qc_input, checkIfExists: true)
+            .splitCsv(header: true)
+            .map { row ->
+                def meta = [id: row.sample]
+                [meta, file(row.short_reads_1), file(row.short_reads_2)]
+            }
+    }
 
     // ---- 1. Raw QC + adapter/quality trimming ----
     FASTQC_RAW(ch_input)
@@ -114,17 +120,27 @@ workflow {
     ch_gene_input = PRODIGAL.out.gff.join(SAMTOOLS_INDEX.out.bam_bai)
     GENE_ABUNDANCE(ch_gene_input)
 
-    // ---- Emit a manifest for pipeline2 to consume ----
+    // ---- Emit a manifest for pipeline2/pipeline3 to consume ----
     // (sample, assembly, clean_reads_1, clean_reads_2) -- see README
-    MEGAHIT.out.assembly
-        .join(ch_clean_reads)
+    ch_assemblies = MEGAHIT.out.assembly.join(ch_clean_reads)   // [meta, asm, r1, r2]
+
+    ch_manifest = ch_assemblies
         .map { meta, asm, r1, r2 ->
             "${meta.id},${asm.toAbsolutePath()},${r1.toAbsolutePath()},${r2.toAbsolutePath()}"
         }
         .collectFile(
             name: 'pipeline2_samplesheet.csv',
-            storeDir: params.outdir,
+            storeDir: params.qc_outdir,
             seed: 'sample,assembly,short_reads_1,short_reads_2\n',
             newLine: true
         )
+
+    emit:
+        assemblies = ch_assemblies   // [meta, assembly, short_reads_1, short_reads_2] for in-memory umbrella wiring
+        manifest   = ch_manifest     // path to pipeline2_samplesheet.csv, for standalone pipeline2/3 runs
+}
+
+// ---- Standalone entry point: `nextflow run pipeline1-qc-assembly/main.nf` ----
+workflow {
+    QC_ASSEMBLY(null)
 }

@@ -1,7 +1,7 @@
 process KRAKEN2 {
     tag "$meta.id"
     label 'process_high'
-    publishDir "${params.outdir}/05_kraken2/${meta.id}", mode: 'copy'
+    publishDir "${params.qc_outdir}/05_kraken2/${meta.id}", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/Kraken-2.17.1.sif"
 

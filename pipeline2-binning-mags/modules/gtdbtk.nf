@@ -3,7 +3,7 @@
 //     // extracted, with GTDBTK_DATA_PATH pointing at the resulting directory.
 //     // Cached via storeDir so this only runs once, not on every invocation.
 //     label 'process_low'
-//     storeDir "${params.outdir}/gtdbtk_db_extracted"
+//     storeDir "${params.binning_outdir}/gtdbtk_db_extracted"
 
 //     input:
 //     path db_archive
@@ -27,7 +27,7 @@ process GTDBTK {
     // release before relying on this step's output.
     tag "$meta.id"
     label 'process_high'
-    publishDir "${params.outdir}/04_gtdbtk/${meta.id}", mode: 'copy'
+    publishDir "${params.binning_outdir}/04_gtdbtk/${meta.id}", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/GTDB-Tk-2.1.1-PAS1117.sif"
 

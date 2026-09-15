@@ -95,7 +95,7 @@ process COMBINE_VS2_GENOMAD {
   combine_virus_id.py \\
             --vs2-score ${virus_score} \\
             --genomad-summary ${virus_summary} \\
-            --samples $params.input_csv \\
+            --samples $params.viromics_input \\
             --outdir .
   """
 }
@@ -104,7 +104,7 @@ process COMBINE_VS2_GENOMAD {
 //   combine_virus_id.py \\
 //             --vs2-dir $params.vs2 \\
 //             --genomad-dir $params.genomad \\
-//             --samples $params.input_csv \\
+//             --samples $params.viromics_input \\
 //             --outdir .
 
 //     """

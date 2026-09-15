@@ -22,7 +22,7 @@
 //     // before the fix).
 //     tag "$meta.id"
 //     label 'process_high'
-//     publishDir "${params.outdir}/02_bin_refinement/${meta.id}", mode: 'copy'
+//     publishDir "${params.binning_outdir}/02_bin_refinement/${meta.id}", mode: 'copy'
 
 //     container "/fs/project/PAS1117/modules/singularity/metawrap-1.3.2-checkm2-fork.sif"
 
@@ -90,7 +90,7 @@ process METAWRAP_REFINE {
     // before the fix).
     tag "$meta.id"
     label 'process_high'
-    publishDir "${params.outdir}/02_bin_refinement/${meta.id}", mode: 'copy'
+    publishDir "${params.binning_outdir}/02_bin_refinement/${meta.id}", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/metawrap-1.3.2-checkm2-fork.sif"
 

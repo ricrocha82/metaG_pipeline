@@ -15,7 +15,7 @@ process DREP {
     // real multi-sample runs, where CheckM2-based quality filtering is
     // the actual point of supplying genomeInfo at all.
     label 'process_high'
-    publishDir "${params.outdir}/03b_drep", mode: 'copy'
+    publishDir "${params.binning_outdir}/03b_drep", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/dRep-3.6.2.sif"
 

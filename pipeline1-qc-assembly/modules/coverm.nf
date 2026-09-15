@@ -5,7 +5,7 @@ process COVERM_CONTIG {
     // since the gene abundance step (featureCounts) needs it.
     tag "$meta.id"
     label 'process_high'
-    publishDir "${params.outdir}/08_coverm/${meta.id}", mode: 'copy'
+    publishDir "${params.qc_outdir}/08_coverm/${meta.id}", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/CoverM-0.7.0.sif"
 

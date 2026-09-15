@@ -12,7 +12,7 @@ process SINGLEM_PIPE {
     // diagnose -- see .command.err for the real message.
     tag "$meta.id"
     label 'process_high'
-    publishDir "${params.outdir}/05b_singlem/${meta.id}", mode: 'copy'
+    publishDir "${params.qc_outdir}/05b_singlem/${meta.id}", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/SingleM-0.13.2.sif"
 
@@ -43,7 +43,7 @@ process SINGLEM_PIPE {
 //     // default configured, and a --metapackage path will need adding back.
 //     tag "$meta.id"
 //     label 'process_high'
-//     publishDir "${params.outdir}/05b_singlem/${meta.id}", mode: 'copy'
+//     publishDir "${params.qc_outdir}/05b_singlem/${meta.id}", mode: 'copy'
 
 //     container "/fs/project/PAS1117/modules/singularity/SingleM-0.13.2.sif"
 
@@ -67,7 +67,7 @@ process SINGLEM_PIPE {
 //     // https://wwood.github.io/singlem/tools/prokaryotic_fraction
 //     tag "$meta.id"
 //     label 'process_medium'
-//     publishDir "${params.outdir}/05b_singlem/${meta.id}", mode: 'copy'
+//     publishDir "${params.qc_outdir}/05b_singlem/${meta.id}", mode: 'copy'
 
 //     container "/fs/project/PAS1117/modules/singularity/SingleM-0.13.2.sif"
 

@@ -11,7 +11,7 @@ process HOST_PHIX_SUMMARY {
     // if the awk/grep parsing is off, the raw per-sample .stats files
     // (always published regardless) are the ground truth to fall back on.
     label 'process_low'
-    publishDir "${params.outdir}/00_summary", mode: 'copy'
+    publishDir "${params.qc_outdir}/00_summary", mode: 'copy'
 
     input:
     path host_stats_files

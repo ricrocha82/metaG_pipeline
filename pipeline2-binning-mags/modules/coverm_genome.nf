@@ -13,7 +13,7 @@ process COVERM_GENOME_MATRIX {
     // -- avoids the earlier bug where raw-read naming (*_R1_001.fastq.gz)
     // didn't match the assumed *_clean_1.fastq.gz / *_1.fastq.gz pattern.
     label 'process_high'
-    publishDir "${params.outdir}/05_mag_abundance", mode: 'copy'
+    publishDir "${params.binning_outdir}/05_mag_abundance", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/CoverM-0.7.0.sif"
 

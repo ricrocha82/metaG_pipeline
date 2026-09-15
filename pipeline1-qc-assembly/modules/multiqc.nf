@@ -1,6 +1,6 @@
 process MULTIQC {
     label 'process_low'
-    publishDir "${params.outdir}/00_multiqc", mode: 'copy'
+    publishDir "${params.qc_outdir}/00_multiqc", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/MultiQC-1.7.sif"
 

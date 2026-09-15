@@ -1,6 +1,13 @@
 # virion3
 codes to analyse data for the Virion3 project
 
+**Param rename note:** `--outdir`/`--input_csv` were renamed to
+`--viromics_outdir`/`--viromics_input` (all commands below updated) so this
+pipeline can run alongside pipeline1/pipeline2 in the repo-root umbrella
+pipeline without `--outdir` colliding across pipelines. Can also be run
+standalone exactly as documented below -- see the root `README.md` for the
+combined-run option.
+
 # sequences data
 We have two platforms: ONT and PacBio. Along with that we have short-reads from illumina.
 
@@ -17,10 +24,10 @@ conda activate nf-core
 cd my/path/to/nf/results
 
 # this will run only genomad
-nextflow run main.nf --outdir results -profile singularity
+nextflow run main.nf --viromics_outdir results -profile singularity
 
 # to run both genomad + vs2
-nextflow run main.nf --outdir results -profile singularity -detect both
+nextflow run main.nf --viromics_outdir results -profile singularity -detect both
 ```
 
 Resume entry workflows
@@ -40,31 +47,31 @@ If you already have some files and want to run some steps only
 # Have CheckV FASTAs, want to re-run everything after
 nextflow run main.nf -entry FROM_CHECKV \
     --checkv_dir results/virus/checkv \
-    --input_csv   /results/samples.csv \
-    --outdir      results \
+    --viromics_input   /results/samples.csv \
+    --viromics_outdir      results \
     -profile singularity
 
 # Have cluster FASTAs, want mapping + abundance + enhanced
 nextflow run main.nf -entry FROM_CLUSTERING \
     --cluster_dir results/virus/cluster \
-    --input_csv   /results/samples.csv \
-    --outdir      results \
+    --viromics_input   /results/samples.csv \
+    --viromics_outdir      results \
     -profile singularity
 
 # Have BAMs and cluster FASTAs, want abundance + enhanced
 nextflow run main.nf -entry FROM_MAPPING \
     --bam_dir     results/virus/mapping \
     --cluster_dir results/virus/cluster \
-    --input_csv   /results/samples.csv \
-    --outdir      results \
+    --viromics_input   /results/samples.csv \
+    --viromics_outdir      results \
     -profile singularity
 
 # Have BAMs + clusters, want enhanced virome + microdiversity
 nextflow run main.nf -entry FROM_ABUNDANCE \
     --bam_dir     results/virus/mapping \
     --cluster_dir results/virus/cluster \
-    --input_csv   /results/samples.csv \
-    --outdir      results \
+    --viromics_input   /results/samples.csv \
+    --viromics_outdir      results \
     -profile singularity
 
 # Have everything up to enhanced, want microdiversity only
@@ -73,8 +80,8 @@ nextflow run main.nf -entry FROM_ENHANCED \
     --cluster_dir  results/virus/cluster \
     --enhanced_ref results/virus/cluster/enhanced.self-blastn.clusters.fna \
     --enhanced_bam results/virus/mapping/enhanced_sorted.bam \
-    --input_csv   /results/samples.csv \
-    --outdir      results \
+    --viromics_input   /results/samples.csv \
+    --viromics_outdir      results \
     -profile singularity
 ```
 

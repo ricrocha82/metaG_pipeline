@@ -5,7 +5,7 @@ process GENE_ABUNDANCE {
     // `container "/fs/project/PAS1117/modules/singularity/<name>.sif"` line.
     tag "$meta.id"
     label 'process_medium'
-    publishDir "${params.outdir}/10_gene_abundance/${meta.id}", mode: 'copy'
+    publishDir "${params.qc_outdir}/10_gene_abundance/${meta.id}", mode: 'copy'
 
     container "/fs/project/PAS1117/modules/singularity/subread-2.0.6.sif"
 
