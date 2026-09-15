@@ -1,2 +1,2 @@
-# metaG_pipeline
-A Nextflow pipeline to process metagenomic samples
+# Nextflow pipeline to process metaG samples
+Pipeline to process metagenomic samples (Constantly being updated)
