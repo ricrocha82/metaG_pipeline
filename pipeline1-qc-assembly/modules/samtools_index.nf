@@ -4,7 +4,7 @@ process SAMTOOLS_INDEX {
     tag "$meta.id"
     label 'process_low'
 
-    container "/fs/project/PAS1117/modules/singularity/SAMtools-1.23.1.sif"
+    container "/fs/ess/community/CoMS_microbiome_tools/sif-apps_staging/samtools/1.17/samtools_1.17-2023-06.sif"
 
     input:
     tuple val(meta), path(bam)

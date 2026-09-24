@@ -2,9 +2,9 @@ process PRODIGAL {
     tag "$meta.id"
     label 'process_low'
 
-    publishDir "${params.outdir}/09_prodigal/${meta.id}", mode: 'copy'
+    publishDir { "${params.outdir}/09_prodigal/${meta.id}" }, mode: 'copy'
 
-    container "/fs/project/PAS1117/modules/singularity/Prodigal-2.6.3.sif"
+    container "/fs/ess/community/CoMS_microbiome_tools/sif-apps_staging/prodigal/2.6.3/prodigal_2.6.3.sif"
 
     input:
     tuple val(meta), path(assembly)
@@ -26,39 +26,35 @@ process PRODIGAL {
     """
 }
 
-process BAKTA {
+process PROKKA {
     tag "$meta.id"
     label 'process_medium'
 
-    publishDir "${params.outdir}/09_bakta/${meta.id}", mode: 'copy'
+    publishDir { "${params.outdir}/09_prokka/${meta.id}" }, mode: 'copy'
 
-    container "/fs/project/PAS1117/modules/singularity/Bakta-1.12.0.sif"
+    container "/fs/ess/community/CoMS_microbiome_tools/sif-apps_staging/prokka/1.14.6/prokka_1.14.6.sif"
 
     input:
     tuple val(meta), path(assembly)
-    val bakta_db
 
     output:
-    tuple val(meta), path("${meta.id}_bakta"), emit: results
-    tuple val(meta), path("${meta.id}_bakta/${meta.id}.gff3"), emit: gff
-    tuple val(meta), path("${meta.id}_bakta/${meta.id}.faa"), emit: proteins
-    tuple val(meta), path("${meta.id}_bakta/${meta.id}.ffn"), emit: genes
-    tuple val(meta), path("${meta.id}_bakta/${meta.id}.tsv"), emit: annotations
-    tuple val(meta), path("${meta.id}_bakta/${meta.id}.json"), emit: json
+    tuple val(meta), path("${meta.id}_prokka"), emit: results
+    tuple val(meta), path("${meta.id}_prokka/${meta.id}.gff"), emit: gff
+    tuple val(meta), path("${meta.id}_prokka/${meta.id}.faa"), emit: proteins
+    tuple val(meta), path("${meta.id}_prokka/${meta.id}.ffn"), emit: genes
+    tuple val(meta), path("${meta.id}_prokka/${meta.id}.tsv"), emit: annotations
 
     script:
+    // Prokka rejects contig IDs longer than 37 characters; MEGAHIT contigs
+    // are named <sample>_k141_N, so keep sample IDs short.
     """
-    test -d "${bakta_db}" || {
-        echo "ERROR: Bakta database not found: ${bakta_db}" >&2
-        exit 1
-    }
-
-    bakta \
-        --db "${bakta_db}" \
-        --output "${meta.id}_bakta" \
-        --prefix "${meta.id}" \
-        --threads ${task.cpus} \
-        --force \
-        "${assembly}"
+    prokka \\
+        --metagenome \\
+        --outdir ${meta.id}_prokka \\
+        --prefix ${meta.id} \\
+        --locustag ${meta.id} \\
+        --cpus ${task.cpus} \\
+        --force \\
+        ${assembly}
     """
 }

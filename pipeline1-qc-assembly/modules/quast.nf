@@ -1,9 +1,9 @@
 process QUAST {
     tag "$meta.id"
     label 'process_medium'
-    publishDir "${params.outdir}/07_quast/${meta.id}", mode: 'copy'
+    publishDir { "${params.outdir}/07_quast/${meta.id}" }, mode: 'copy'
 
-    container "/fs/project/PAS1117/modules/singularity/quast-5.3.0.sif"
+    container "/fs/ess/community/CoMS_microbiome_tools/sif-apps_staging/quast/5.0.2/quast_5.0.2.sif"
 
     input:
     tuple val(meta), path(assembly)

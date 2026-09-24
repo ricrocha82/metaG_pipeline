@@ -5,9 +5,9 @@ process COVERM_CONTIG {
     // since the gene abundance step (featureCounts) needs it.
     tag "$meta.id"
     label 'process_high'
-    publishDir "${params.outdir}/08_coverm/${meta.id}", mode: 'copy'
+    publishDir { "${params.outdir}/08_coverm/${meta.id}" }, mode: 'copy'
 
-    container "/fs/project/PAS1117/modules/singularity/CoverM-0.7.0.sif"
+    container "/fs/ess/community/CoMS_microbiome_tools/sif-apps_staging/coverm/0.7.0/coverm_0.7.0_miniconda24.sif"
 
     input:
     tuple val(meta), path(assembly), path(reads1), path(reads2)

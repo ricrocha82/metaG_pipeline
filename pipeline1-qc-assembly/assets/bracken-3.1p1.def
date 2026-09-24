@@ -1,0 +1,26 @@
+Bootstrap: docker
+From: condaforge/miniforge3:latest
+
+%labels
+    Author Ricardo R. Pavan
+    Software Bracken
+    Version 3.1p1
+    Source https://github.com/jenniferlu717/Bracken
+
+%post
+    set -e
+    mamba create -y -n bracken_env -c conda-forge -c bioconda bracken=3.1p1
+    mamba clean -a -y
+    test -x /opt/conda/envs/bracken_env/bin/bracken
+
+%environment
+    export PATH="/opt/conda/envs/bracken_env/bin:${PATH}"
+    export HOME=/tmp
+
+%test
+    bracken -h
+
+# apptainer build /fs/ess/PAS0822/modules/singularity/bracken-3.1p1.sif /fs/ess/PAS0822/ricardo/metaG_pipeline/pipeline1-qc-assembly/assets/bracken-3.1p1.def
+# apptainer exec /fs/ess/PAS0822/modules/singularity/bracken-3.1p1.sif which bracken est_abundance.py
+
+

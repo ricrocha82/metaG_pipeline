@@ -1,7 +1,6 @@
 # pipeline1-qc-assembly
 
-Steps 1-9 of the pig_burn metagenomics workflow: QC, trimming, host/PhiX
-removal, taxonomic classification (Kraken2 + SingleM), assembly,
+QC, trimming, host/PhiX removal, read-level taxonomy, assembly,
 evaluation, mapping/abundance, and gene prediction/annotation/abundance.
 
 No skip toggles -- every step always runs, every reference path is
@@ -17,33 +16,64 @@ README for how they connect.
 nextflow run main.nf -profile singularity,slurm \
     --input assets/samplesheet.csv \
     --outdir results \
-    --host_fasta /path/to/pig_genome.fa \
-    --phix_fasta /fs/project/PAS1117/bioinformatic_tools/bbmap_38.51/resources/phix174_ill.ref.fa.gz \
-    --adapters_fasta /fs/project/PAS1117/bioinformatic_tools/bbmap_38.51/resources/adapters.fa \
-    --kraken2_db /path/to/kraken2_db \
+    --host_fasta /path/to/host_genome.fna \
     -resume
 ```
 
-## Required inputs -- still open
+Choose read-level taxonomy tools with a comma-separated list (default
+`metaphlan`); `kraken2` also runs Bracken:
 
-1. **`--host_fasta`**: pig reference genome fasta. Not yet provided.
-2. **`--kraken2_db`**: Kraken2 database directory. Not yet provided.
-3. **`--singlem_db`**: removed. SingleM now runs with no `--metapackage`
-   flag at all, relying on whatever default `SingleM-0.13.2.sif` resolves
-   on its own. **Unverified** whether this container actually has a
-   working default configured — if `SINGLEM_PIPE` fails with something
-   like "no metapackage found" on your first real run, that means it
-   doesn't, and a `--metapackage` path will need adding back into
-   `modules/singlem.nf`. Check before running for real:
-   ```bash
-   singularity exec /fs/project/PAS1117/modules/singularity/SingleM-0.13.2.sif \
-       bash -c 'echo $SINGLEM_METAPACKAGE_PATH'
-   singularity exec /fs/project/PAS1117/modules/singularity/SingleM-0.13.2.sif \
-       find / -iname "*.smpkg*" 2>/dev/null
-   ```
-4. **`--phix_fasta`** and **`--adapters_fasta`**: confirmed available at
-   `/fs/project/PAS1117/bioinformatic_tools/bbmap_38.51/resources/`
-   (`phix174_ill.ref.fa.gz` and `adapters.fa` respectively).
+```bash
+    --read_taxonomy metaphlan,singlem,kraken2
+```
+
+Or (needs adjustments)
+
+```bash
+nextflow run main.nf -profile singularity,slurm \
+    --input assets/samplesheet.csv \
+    --outdir results \
+    --host_fasta /path/to/host_genome.fa \
+    --phix_fasta ../phix174_ill.ref.fa.gz \
+    --adapters_fasta ../adapters.fa \
+    --kraken2_db /path/to/kraken2_db \
+    [...]
+    -resume
+```
+
+## Parameters
+
+| Param | Default | Notes |
+|---|---|---|
+| `input` | required | CSV: `sample,short_reads_1,short_reads_2`. Sample IDs must be unique. |
+| `host_fasta` | required | Host genome fasta. |
+| `phix_fasta` | `/fs/ess/PAS0822/references/phix174_ill.ref.fa.gz` | |
+| `adapters_fasta` | `adapters` | BBDuk keyword for its bundled adapters, or a fasta path. |
+| `bowtie2_index_dir` | `${outdir}/bowtie2_indexes` | Host/PhiX indexes are built once here and reused. |
+| `read_taxonomy` | `metaphlan` | Any of `kraken2`, `singlem`, `metaphlan`. SingleM also reports the bacterial/archaeal read fraction. |
+| `kraken2_db` |  `kraken2_pluspf` | Must contain Bracken `.kmer_distrib` files. |
+| `kraken2_confidence` | `0` | Kraken2 `--confidence`. |
+| `bracken_sif` | `/fs/ess/PAS0822/modules/singularity/bracken-3.1p1.sif` | Used with `kraken2`. |
+| `bracken_read_length` | `150` | Must match a `database<N>mers.kmer_distrib` file. |
+| `bracken_level` | `S` | |
+| `singlem_metapackage` |  `S3.1.0.metapackage_20221209` | |
+| `metaphlan_db` / `metaphlan_index` |  `mph4_2_db` / `mpa_vJan25_CHOCOPhlAnSGB_202503` | Index must exist locally; compute nodes have no internet. |
+| `min_contig_size` | `1000` | MEGAHIT and QUAST. |
+
+
+## Notes
+
+- Contigs are renamed `<sample>_k141_N` so IDs stay unique when pooled
+  across samples. Prokka rejects contig IDs longer than 37 characters, so
+  keep sample IDs short.
+- `00_summary/host_phix_summary.tsv` reports Bowtie2's overall alignment
+  rate; the PhiX percentage is relative to host-removed reads.
+- Kraken2 loads the whole database into RAM; its memory is set in
+  `conf/base.config`.
+- `publishDir` paths that use `meta` are wrapped in a closure
+  (`publishDir { "...${meta.id}" }`), required by the strict parser that is
+  the default from Nextflow 26.04; this also works on older versions.
+
 
 ## SingleM steps
 

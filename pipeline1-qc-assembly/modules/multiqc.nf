@@ -2,7 +2,7 @@ process MULTIQC {
     label 'process_low'
     publishDir "${params.outdir}/00_multiqc", mode: 'copy'
 
-    container "/fs/project/PAS1117/modules/singularity/MultiQC-1.7.sif"
+    container "/fs/ess/community/CoMS_microbiome_tools/sif-apps_staging/multiqc/1.7/MultiQC-1.7.sif"
 
     input:
     path('*')

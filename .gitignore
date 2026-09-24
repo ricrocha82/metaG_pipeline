@@ -235,6 +235,9 @@ work/
 # Nextflow execution history
 .nextflow.history
 
+*.bak
+*.csv
+*.txt
 
 # ==========================================
 # VS Code
@@ -305,3 +308,4 @@ env/
 .env
 .env.*
 !.env.example
+
