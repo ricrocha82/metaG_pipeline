@@ -7,7 +7,7 @@ process GTDBTK_DE_NOVO {
     publishDir "${params.outdir}/09_iphop", mode: 'copy'
 
     container params.gtdbtk_sif
-    containerOptions "--bind ${params.gtdbtk_db}:/refdata"
+    // containerOptions "--bind ${params.gtdbtk_db}:/refdata"
 
     input:
     path mags, stageAs: 'mags/*'
@@ -17,6 +17,8 @@ process GTDBTK_DE_NOVO {
 
     script:
     """
+    export GTDBTK_DATA_PATH=\$(readlink -f ${params.gtdbtk_db})
+    
     gtdbtk de_novo_wf \\
         --genome_dir mags \\
         --bacteria \\
