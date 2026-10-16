@@ -1,9 +1,9 @@
 process METABAT2 {
     tag "$meta.id"
     label 'process_medium'
-    publishDir "${params.outdir}/01_binning/${meta.id}/metabat2", mode: 'copy'
+    publishDir { "${params.outdir}/01_binning/${meta.id}/metabat2" }, mode: 'copy'
 
-    container "/fs/project/PAS1117/modules/singularity/MetaBAT2-2.14.sif"
+    container "/fs/ess/community/CoMS_microbiome_tools/sif-apps_staging/metabat2/2.15-1/metabat2_2.15-1.sif"
 
     input:
     tuple val(meta), path(assembly), path(bam), path(bai)
@@ -18,8 +18,8 @@ process METABAT2 {
     metabat2 -i ${assembly} -a depth.txt \\
         -o metabat2_bins/${meta.id}_bin \\
         -t ${task.cpus} \\
-        -m ${params.min_contig_size ?: 1500} \\
-+       --seed ${params.binning_seed ?: 1}
+        -m ${params.min_contig_size} \\
+        --seed ${params.binning_seed}
     """
 }
 
@@ -39,56 +39,18 @@ process COUNT_CONTIGS {
     """
 }
 
-
-// process COMEBIN {
-//     // Conda env, per your request -- no local .sif for COMEBin exists on
-//     // PAS1117. Run with -profile conda (see README).
-//     errorStrategy 'ignore'
-//     tag "$meta.id"
-//     label 'process_high'
-//     publishDir "${params.outdir}/01_binning/${meta.id}/comebin", mode: 'copy'
-
-//     container "/fs/project/PAS1117/modules/singularity/comebin-1.0.4.sif" 
-
-//     input:
-//     tuple val(meta), path(assembly), path(bam), path(bai)
-
-//     output:
-//     tuple val(meta), path("comebin_bins"), emit: bins
-//     tuple val(meta), path("comebin_quality"), emit: comebin_quality
-
-//     script:
-//     """
-//     mkdir -p comebin_bins comebin_quality
-
-//     run_comebin.sh -a ${assembly} -o comebin_out -p . -t ${task.cpus} > comebin_run.log 2>&1
-
-//     cp comebin_out/comebin_res/comebin_res_bins/*.fa comebin_bins/ 2>/dev/null || true
-
-//     n_bins=\$(ls comebin_bins/*.fa 2>/dev/null | wc -l)
-//     if [ "\$n_bins" -eq 0 ]; then
-//         echo "ERROR: COMEBin produced zero bins for ${meta.id} despite passing the contig-count gate -- this is unexpected, check comebin_run.log" >&2
-//         find comebin_out -maxdepth 4 -type d >&2
-//         exit 1
-//     fi
-//     echo "COMEBin produced \$n_bins bins"
-
-//     cp comebin_out/comebin_res/cluster_res/unitem_profile/*_quality.tsv comebin_quality/ 2>/dev/null || true
-//     cp comebin_out/comebin_res/cluster_res/unitem_profile/bin_quality_summary.tsv comebin_quality/ 2>/dev/null || true
-//     cp comebin_out/comebin_res/cluster_res/unitem_profile/binning_methods/*/checkm_bac/genome_quality.tsv \\
-//         comebin_quality/checkm_bacteria_genome_quality.tsv 2>/dev/null || true
-//     cp comebin_out/comebin_res/cluster_res/unitem_profile/binning_methods/*/checkm_ar/genome_quality.tsv \\
-//         comebin_quality/checkm_archaea_genome_quality.tsv 2>/dev/null || true
-//     """
-// }
-
 process COMEBIN {
     errorStrategy 'ignore'
     tag "$meta.id"
     label 'process_high'
-    publishDir "${params.outdir}/01_binning/${meta.id}/comebin", mode: 'copy'
+    publishDir { "${params.outdir}/01_binning/${meta.id}/comebin" }, mode: 'copy'
 
-    container "/fs/project/PAS1117/modules/singularity/comebin-1.0.4.sif"
+    container "/fs/ess/community/CoMS_microbiome_tools/sif-apps_staging/comebin/1.0.3/comebin_1.0.3.sif"
+
+    // CoMS patch for COMEBin 1.0.3: guards the training-accuracy call
+    // (logging/early stopping only) against empty batches. Does not change
+    // embeddings or clustering.
+    containerOptions "--bind ${params.comebin_simclr_patch}:/opt/conda/envs/comebin_env/bin/COMEBin/simclr.py"
 
     input:
     tuple val(meta), path(assembly), path(bam), path(bai)
@@ -136,13 +98,11 @@ process COMEBIN {
 }
 
 process SEMIBIN2 {
-    // Conda env, per your request -- no local .sif for SemiBin2 exists on
-    // PAS1117. Run with -profile conda (see README).
     tag "$meta.id"
     label 'process_high'
-    publishDir "${params.outdir}/01_binning/${meta.id}/semibin2", mode: 'copy'
+    publishDir { "${params.outdir}/01_binning/${meta.id}/semibin2" }, mode: 'copy'
 
-    container "/fs/project/PAS1117/modules/singularity/semibin2-2.3.0.sif"
+    container "/fs/ess/community/CoMS_microbiome_tools/sif-apps_staging/semibin/2.2.1/semibin2_2.2.1.sif"
 
     input:
     tuple val(meta), path(assembly), path(bam), path(bai)
@@ -157,8 +117,8 @@ process SEMIBIN2 {
         -i ${assembly} -b ${bam} \\
         -o semibin2_out \\
         -t ${task.cpus} \\
-        --random-seed ${params.binning_seed ?: 1} \\
-        --environment global
+        --random-seed ${params.binning_seed} \\
+        --environment ${params.semibin2_environment}
 
     mkdir -p semibin2_bins
     cp semibin2_out/output_bins/*.fa.gz semibin2_bins/ 2>/dev/null || true
@@ -169,32 +129,3 @@ process SEMIBIN2 {
     cp semibin2_out/contig_bins.tsv semibin2_summary/ 2>/dev/null || true
     """
 }
-
-// process VAMB {
-    
-//     tag "$meta.id"
-//     label 'process_high'
-//     publishDir "${params.outdir}/01_binning/${meta.id}/vamb", mode: 'copy'
-
-//     container "/fs/project/PAS1117/modules/singularity/VAMB-3.0.2.sif"
-
-//     input:
-//     tuple val(meta), path(assembly), path(bam), path(bai)
-
-//     output:
-//     tuple val(meta), path("vamb_bins"), emit: bins
-
-//     script:
-//     """
-//     mkdir -p bam_dir
-//     cp ${bam} ${bai} bam_dir/
-
-//     vamb bin default \\
-//         --outdir vamb_out \\
-//         --fasta ${assembly} \\
-//         -p ${task.cpus}
-
-//     mkdir -p vamb_bins
-//     cp vamb_out/bins/*.fna vamb_bins/ 2>/dev/null || true
-//     """
-// }

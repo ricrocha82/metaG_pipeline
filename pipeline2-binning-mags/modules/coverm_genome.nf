@@ -1,21 +1,16 @@
-
 process COVERM_GENOME_MATRIX {
-    // Replaces the earlier per-sample COVERM_GENOME: now maps ALL
-    // samples' reads against the dereplicated representative genome set
-    // in one go, producing a proper MAG x sample abundance matrix --
-    // which is what dereplicated MAGs actually need (their abundance
-    // profile across every sample, not just the one they happened to be
-    // binned from).
+    // Maps ALL samples' reads against the dereplicated representative
+    // genomes in one CoverM call, producing a MAG x sample abundance matrix.
+    // A MAG counts as present in a sample only if at least
+    // params.coverm_min_covered_fraction of its length is covered, which
+    // limits false presence calls from reads on conserved regions.
     //
-    // R1/R2 pairing comes directly from the input channel tuple (same
-    // pairing used for assembly and COVERM_MAPPING earlier in the
-    // pipeline) rather than being re-derived from filenames via ls/glob
-    // -- avoids the earlier bug where raw-read naming (*_R1_001.fastq.gz)
-    // didn't match the assumed *_clean_1.fastq.gz / *_1.fastq.gz pattern.
+    // R1/R2 pairing comes from the samplesheet (same pairing used for
+    // COVERM_MAPPING), not re-derived from filenames.
     label 'process_high'
-    publishDir "${params.outdir}/05_mag_abundance", mode: 'copy'
+    publishDir "${params.outdir}/06_mag_abundance", mode: 'copy'
 
-    container "/fs/project/PAS1117/modules/singularity/CoverM-0.7.0.sif"
+    container "/fs/ess/community/CoMS_microbiome_tools/sif-apps_staging/coverm/0.7.0/coverm_0.7.0_miniconda24.sif"
 
     input:
     path representatives
@@ -35,9 +30,11 @@ process COVERM_GENOME_MATRIX {
         --coupled ${coupled_reads} \\
         --genome-fasta-directory ${representatives} \\
         -x fa \\
-        --methods relative_abundance mean trimmed_mean \\
+        --methods relative_abundance count mean trimmed_mean \\
         --threads ${task.cpus} \\
-        --min-read-percent-identity .95 --min-read-aligned-percent .75 --discard-unmapped \\
+        --min-read-percent-identity .95 --min-read-aligned-percent .75 \\
+        --min-covered-fraction ${params.coverm_min_covered_fraction} \\
+        --discard-unmapped \\
         --bam-file-cache-directory bam_cache \\
         --output-file mag_abundance_matrix.tsv
     """

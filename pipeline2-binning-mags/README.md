@@ -1,11 +1,10 @@
 # pipeline2-binning-mags
 
-Steps 10–14: metagenome binning (4 binners), bin refinement, quality,
-taxonomy, and MAG abundance.
+Metagenome binning, bin refinement, dereplication, MAG quality, taxonomy,
+MAG abundance, and MAG functional annotation. 
 
-Deliberately decoupled from `pipeline1-qc-assembly`: this pipeline only
-needs an assembly + a pair of clean reads per sample, so it can be re-run
-independently (e.g. re-refining bins with different DAS_Tool parameters)
+Deliberately decoupled from `pipeline1-qc-assembly`: it only needs an
+assembly + a pair of clean reads per sample, so binning can be re-run
 without re-running QC/assembly.
 
 ## Usage
@@ -14,113 +13,83 @@ without re-running QC/assembly.
 nextflow run main.nf -profile singularity,slurm \
     --input /path/to/pipeline1/results/pipeline2_samplesheet.csv \
     --outdir results \
+    -ansi-log false \
     -resume
 ```
 
-`--gtdbtk_db` already defaults to the path you gave
-(`/fs/project/PAS1117/modules/GTDB-Tk/gtdbtk_data/gtdbtk_r95_data.tar.gz`).
-`--checkm2_db` is left unset by default, which triggers an automatic
-one-time download (see caveats below) — pass your own path if you already
-have a CheckM2 database somewhere.
-
-## Before you run this — real compatibility concerns
-
-1. **GTDB-Tk r95 database vs. v2.1.1 binary.** This is the biggest risk in
-   this pipeline. GTDB release 95 is from ~2020 and was built for GTDB-Tk
-   v1.x. `GTDB-Tk-2.1.1-PAS1117.sif` is a v2.x binary, which expects
-   reference package release ~207 or later — this mismatch will likely
-   cause `gtdbtk classify_wf` to fail its internal compatibility check, or
-   at best silently produce unreliable classifications. Before relying on
-   this step:
-   ```bash
-   find /fs/project/PAS1117 -iname "*gtdbtk*" 2>/dev/null
-   ```
-   If nothing newer exists, this is worth flagging to whoever manages your
-   group's shared module library — GTDB-Tk reference data is large (~100GB+)
-   but a stale r95 copy paired with a v2 binary isn't really usable as-is.
-
-2. **CheckM2 database auto-download.** `CheckM2_database` (the DIAMOND
-   reference CheckM2 needs) is *not* the same as the CheckM v1
-   `CheckMdata` you have — v1's marker-gene HMM database and CheckM2's
-   DIAMOND-based reference are structurally different. If `--checkm2_db`
-   isn't supplied, the pipeline downloads CheckM2's database on first run
-   via `checkm2 database --download`, cached under
-   `${outdir}/checkm2_db` so it only happens once. This needs outbound
-   internet access from the compute node — confirm your SLURM
-   partition/queue allows it (it did for your BUSCO/Kraken2 test runs
-   earlier, so likely fine).
-
-3. **COMEBin and SemiBin2 run via conda, not containers.** No `.sif` for
-   either exists in `/fs/project/PAS1117/modules/singularity/`. Both
-   processes declare a `conda` directive with no `container`, and the
-   config is set up so this resolves correctly even under
-   `-profile singularity` (see comments in `nextflow.config`). First run
-   will be slower while conda builds these environments — consider a
-   dry/small-data test run first.
-
-4. **VAMB via container, but check the CLI syntax matches your version.**
-   `VAMB-3.0.2.sif` is used — VAMB's CLI has changed somewhat across major
-   versions (3.x vs. newer 4.x), so if you hit an argument-parsing error,
-   check `singularity exec <sif> vamb --help` against the command in
-   `modules/binning.nf`.
+`--input` is the `pipeline2_samplesheet.csv` that pipeline1 writes
+(`sample,assembly,short_reads_1,short_reads_2`, pointing to its published
+files). Sample IDs must be unique.
 
 ## Pipeline flow
 
 ```
-per sample:  assembly + reads
+per sample:  assembly + clean reads
                   │
-                  ▼
-          CoverM mapping
+             CoverM mapping ─ samtools index
                   │
-      ┌───────────┼───────────┬───────────┐
-  MetaBAT2     COMEBin    SemiBin2      VAMB          (4 binners, parallel)
-      └───────────┼───────────┴───────────┘
-                  ▼
-              DAS_Tool                                 (refinement, all 4 sets)
-                  │
-                  ▼
-              CheckM2                                  (per-sample quality scores)
-
-  ── all 4 samples' bins + CheckM2 scores pooled together ──
-
-                  ▼
-                dRep                                   (cross-sample dereplication,
-                  │                                      99% ANI, best-quality rep kept)
       ┌───────────┼───────────┐
-      ▼           ▼           ▼
-  CheckM2      GTDB-Tk     CoverM genome matrix
-  (final)     (taxonomy)   (MAG abundance, all samples)
+  MetaBAT2     SemiBin2     COMEBin          (COMEBin skipped below comebin_min_contigs)
+      └───────────┼───────────┘
+               Binette                        (refinement, CheckM2 scoring)
+
+  ── all samples' Binette bins + quality pooled ──
+                  │
+                dRep                          (quality filter + cross-sample dereplication)
+      ┌───────────┼───────────┐
+  CheckM2      GTDB-Tk     CoverM genome
+  (final)      (r226)      (MAG x sample abundance)
+      └─────┬─────┘
+          DRAM                                (per MAG, with taxonomy + quality)
+            │
+     merge ─ distill
 ```
 
-**Why dRep matters here:** without it, a strain present in multiple samples
-(quite plausible across your burn timepoints) would get assembled and
-binned independently in each sample and counted as multiple separate MAGs.
-dRep pools everything, uses CheckM2's completeness/contamination scores to
-pick the best representative among near-duplicates, and gives you one
-non-redundant MAG catalog. GTDB-Tk and CoverM then run once on that catalog
-instead of once per sample.
+## Parameters
 
-## dRep specifics
+| Param | Default | Notes |
+|---|---|---|
+| `input` | required | pipeline1's `pipeline2_samplesheet.csv`. |
+| `checkm2_db` | `CheckM2_database/uniref100.KO.1.dmnd` | Used by Binette and the final CheckM2. |
+| `gtdbtk_db` | `GTDBTK_data/release226` | Extracted reference package for GTDB-Tk 2.6.1. |
+| `comebin_simclr_patch` | `comebin/patched_simclr.py` | Bound over COMEBin 1.0.3's `simclr.py`; guards an empty-batch crash in the training-accuracy metric only. |
+| `dram_db` | `DRAM_dbs/1.4.6` | Bound at `/databases/DRAM` in the DRAM 1.4.6 (no KEGG) image. |
+| `binning_seed` | `1` | MetaBAT2 and SemiBin2. |
+| `min_contig_size` | `1500` | MetaBAT2 `-m` (1500 is its minimum). |
+| `semibin2_environment` | `global` | SemiBin2 pretrained model, e.g. `human_oral`, `human_gut`. |
+| `comebin_min_contigs` | `1024` | Smaller assemblies skip COMEBin (its marker-gene seeding is unreliable there). |
+| `drep_min_completeness` | `70` | value. MIMAG medium quality would be 50. |
+| `drep_max_contamination` | `10` | Binette already caps contamination at 10. |
+| `drep_secondary_ani` | `0.98` | value. Use 0.95 for species-level representatives. |
+| `ignore_genome_quality` | `false` | Test runs only; disables dRep's quality filter. |
+| `coverm_min_covered_fraction` | `0.70` | A MAG counts as present only if this fraction of it is covered. |
 
-- **Container**: `dRep-3.6.2.sif` (already in your PAS1117 module library).
-- **Thresholds used**: `-pa 0.9 -sa 0.99 -nc 0.30` (primary clustering ANI
-  90%, secondary/dereplication ANI 99%, minimum genome coverage overlap
-  30%) — dRep's commonly-used defaults for species-level dereplication.
-  Adjust in `modules/drep.nf` if you want a different stringency.
-- **Genome quality input**: reuses the per-sample CheckM2 scores (step 4)
-  rather than re-running CheckM2 before dereplication — avoids redundant
-  compute. A **second, final CheckM2 pass** (`CHECKM2_FINAL`) then runs on
-  the actual dereplicated output, since those are the quality numbers that
-  matter for your final MAG set.
+## Outputs
 
-## MAG abundance matrix specifics
+| Folder | Content |
+|---|---|
+| `00_coverm_mapping/` | Per-sample contig depth. |
+| `01_binning/<sample>/` | MetaBAT2, SemiBin2 and COMEBin bins. |
+| `02_binette/<sample>/` | Refined bins (`<sample>_binN.fa`), their quality, and CheckM2 quality of every input bin set. |
+| `03_drep/` | `genomeInfo.csv` and dRep output; representatives in `drep_out/dereplicated_genomes`. |
+| `04_checkm2_final/` | CheckM2 report for the dereplicated MAGs. |
+| `05_gtdbtk/` | GTDB-Tk classification. |
+| `06_mag_abundance/` | MAG x sample abundance matrix. |
+| `07_dram/` | `dram_merged/` (annotations, genes, tRNAs/rRNAs for all MAGs) and `dram_distill/` (metabolism summary, product heatmap). |
 
-`COVERM_GENOME_MATRIX` maps *all 4 samples'* reads against the dereplicated
-representative genomes in one CoverM call, producing a proper MAG × sample
-abundance matrix — not 4 separate per-sample tables. This relies on all
-samples' clean read files matching a consistent `*_clean_1/2.fastq.gz`
-naming pattern (as pipeline1 produces) and sorting into matching pairs;
-the process logs the pairing it detected before running CoverM, so check
-that log looks right on your first run.
+## Notes
 
-
+- A binner can finish with zero bins (small or low-coverage assemblies);
+  Binette is only given the bin sets that contain bins. A sample with no
+  bins at all yields an empty Binette result instead of stopping the run.
+- COMEBin has `errorStrategy 'ignore'` and exits 0 on zero bins, so a
+  failed sample is cached and refined from MetaBAT2 + SemiBin2 on `-resume`.
+- DRAM runs one job per dereplicated MAG, after GTDB-Tk and the final
+  CheckM2, so taxonomy and quality are included in its annotations.
+  DRAM's own default drops contigs shorter than 2500 bp before calling
+  genes. The image has no KEGG database, so KEGG-based distillate modules
+  rely on the other databases (KOfam, Pfam, dbCAN, MEROPS, ...).
+- Contig IDs are `<sample>_k141_N` (pipeline1), so contigs stay unique
+  when bins are pooled across samples.
+- `publishDir` paths that use `meta` are closures, as required by the
+  strict parser (default from Nextflow 26.04).

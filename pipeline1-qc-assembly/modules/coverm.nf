@@ -22,9 +22,42 @@ process COVERM_CONTIG {
     coverm contig \\
         --coupled ${reads1} ${reads2} \\
         --reference ${assembly} \\
-        --methods mean trimmed_mean covered_fraction \\
+        --methods count mean length covered_fraction trimmed_mean rpkm tpm \\
         --bam-file-cache-directory bam_cache \\
         --threads ${task.cpus} \\
         --output-file ${meta.id}.contig_abundance.tsv
+    """
+}
+
+
+
+// Maps each sample's clean reads to the nucleotide gene catalog.
+// --min-read-percent-identity 95 matches the catalog's 95% clustering, so a
+// read is only counted for a gene it could belong to.
+process COVERM_GENE_CATALOG {
+
+    tag "$meta.id"
+
+    label 'process_high'
+
+    publishDir { "${params.outdir}/10_gene_catalog/abundance/${meta.id}" }, mode: 'copy'
+
+    container "/fs/ess/community/CoMS_microbiome_tools/sif-apps_staging/coverm/0.7.0/coverm_0.7.0_miniconda24.sif"
+
+    input:
+    tuple val(meta), path(reads1), path(reads2), path(gene_catalog)
+
+    output:
+    tuple val(meta), path("${meta.id}.gene_abundance.tsv"), emit: abundance
+
+    script:
+    """
+    coverm contig \\
+        --coupled ${reads1} ${reads2} \\
+        --reference ${gene_catalog} \\
+        --methods count mean length covered_fraction rpkm tpm \\
+        --min-read-percent-identity 95 \\
+        --threads ${task.cpus} \\
+        --output-file ${meta.id}.gene_abundance.tsv
     """
 }

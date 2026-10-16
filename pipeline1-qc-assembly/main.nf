@@ -1,8 +1,8 @@
 #!/usr/bin/env nextflow
 /*
  * pipeline1-qc-assembly: QC, trimming, host/PhiX removal, read-level
- * taxonomy, assembly, evaluation, mapping/abundance, gene prediction +
- * annotation, and gene abundance.
+ * taxonomy, assembly, evaluation, mapping/abundance, gene prediction,
+ * and a cross-sample gene catalog with functional annotation and abundance.
  *
  * Feeds into pipeline2-binning-mags, which is a separate pipeline by
  * design -- see README.md for how the two connect.
@@ -16,8 +16,12 @@
  *   6. MEGAHIT                           - assembly (sample-prefixed contig IDs)
  *   7. QUAST                             - assembly evaluation
  *   8. CoverM                            - mapping + contig abundance
- *   9. Prodigal + Prokka                 - gene prediction + annotation
- *  10. featureCounts                     - gene abundance table
+ *   9. Prodigal                          - gene prediction (Prokka disabled)
+ *  10. Gene catalog (all samples)        - complete genes, MMseqs2 95% clustering,
+ *                                          eggNOG-mapper (parallel chunks), CoverM
+ *                                          abundance, gene x sample matrices (counts,
+ *                                          CPM, mean coverage, TPM), membership table
+ *  11. featureCounts                     - per-sample gene abundance table
  */
 
 nextflow.enable.dsl = 2
@@ -30,14 +34,20 @@ include { BOWTIE2_REMOVAL as BOWTIE2_HOST_REMOVAL   } from './modules/bowtie2.nf
 include { BOWTIE2_REMOVAL as BOWTIE2_PHIX_REMOVAL   } from './modules/bowtie2.nf'
 include { HOST_PHIX_SUMMARY                         } from './modules/host_phix_summary.nf'
 include { MULTIQC                                   } from './modules/multiqc.nf'
+include { SEQKIT_DEPTH                              } from './modules/seqkit_depth.nf'
 include { KRAKEN2; BRACKEN                          } from './modules/kraken2.nf'
 include { SINGLEM_PIPE; SINGLEM_READ_FRACTION       } from './modules/singlem.nf'
 include { METAPHLAN                                 } from './modules/metaphlan.nf'
 include { MEGAHIT                                   } from './modules/megahit.nf'
 include { QUAST                                     } from './modules/quast.nf'
-include { COVERM_CONTIG                             } from './modules/coverm.nf'
+include { COVERM_CONTIG; COVERM_GENE_CATALOG        } from './modules/coverm.nf'
 include { SAMTOOLS_INDEX                            } from './modules/samtools_index.nf'
-include { PRODIGAL; PROKKA                          } from './modules/prodigal_prokka.nf'
+include { PRODIGAL                                  } from './modules/prodigal_prokka.nf'
+// include { PRODIGAL; PROKKA                       } from './modules/prodigal_prokka.nf'   // Prokka disabled: annotation is done on the gene catalog (eggNOG-mapper)
+include { MMSEQS2                                   } from './modules/mmseqs2.nf'
+include { EGGNOG; EGGNOG_MERGE                      } from './modules/eggnog.nf'
+include { GENE_CATALOG_MEMBERSHIP                   } from './modules/gene_catalog_membership.nf'
+include { GENE_CATALOG_MATRIX                       } from './modules/gene_catalog_matrix.nf'
 include { GENE_ABUNDANCE                            } from './modules/gene_abundance.nf'
 
 workflow {
@@ -59,6 +69,8 @@ workflow {
     def sample_ids = file(params.input, checkIfExists: true).splitCsv(header: true).collect { row -> row.sample }
     def duplicated_ids = sample_ids.countBy { sample_id -> sample_id }.findAll { _sample_id, count -> count > 1 }.keySet()
     if (duplicated_ids) error "Duplicated sample IDs in ${params.input}: ${duplicated_ids.join(', ')}"
+
+    file(params.eggnog_db, checkIfExists: true)
 
     ch_input = channel
         .fromPath(params.input)
@@ -97,6 +109,17 @@ workflow {
         .collect()
     MULTIQC(ch_multiqc_input)
 
+        // ---- 4b. Sequencing depth of clean reads (for coverage normalization) ----
+    SEQKIT_DEPTH(ch_clean_reads)
+    SEQKIT_DEPTH.out.depth
+        .map { _meta, depth_table -> depth_table }
+        .collectFile(
+            name: 'sequencing_depth.tsv',
+            storeDir: "${params.outdir}/04b_read_depth",
+            seed: "sample\treads\tbases\tgbp\n",
+            sort: true
+        )
+
     // ---- 5. Read-level taxonomy (tools chosen with --read_taxonomy) ----
     if ('kraken2' in read_taxonomy_tools) {
         ch_kraken2_db = channel.value(file(params.kraken2_db, checkIfExists: true))
@@ -123,11 +146,41 @@ workflow {
     COVERM_CONTIG(ch_coverm_input)
     SAMTOOLS_INDEX(COVERM_CONTIG.out.bam)
 
-    // ---- 9. Gene prediction + annotation ----
+    // ---- 9. Gene prediction ----
     PRODIGAL(MEGAHIT.out.assembly)
-    PROKKA(MEGAHIT.out.assembly)
+    // PROKKA(MEGAHIT.out.assembly)   // disabled: see include above
 
-    // ---- 10. Gene abundance table ----
+    // ---- 10. Cross-sample gene catalog ----
+    // Nucleotide genes, not proteins: the same catalog is used for read
+    // mapping (DNA) and for eggNOG-mapper (--itype CDS).
+    ch_all_genes = PRODIGAL.out.nt_fasta
+        .map { _meta, fna -> fna }
+        .collect()
+    MMSEQS2(ch_all_genes)
+
+    // Annotate the representative genes once, in parallel chunks.
+    ch_catalog_chunks = MMSEQS2.out.representatives
+        .splitFasta(by: params.eggnog_chunk_size as Integer, file: true)
+    EGGNOG(ch_catalog_chunks)
+    EGGNOG_MERGE(
+        EGGNOG.out.annotations.collect(),
+        EGGNOG.out.orthologs.collect()
+    )
+
+    // Link every original gene to its catalog representative and contig.
+    ch_all_gff = PRODIGAL.out.gff
+        .map { _meta, gff -> gff }
+        .collect()
+    GENE_CATALOG_MEMBERSHIP(MMSEQS2.out.clusters, ch_all_gff)
+
+    // Map each sample's reads to the catalog, then merge into matrices.
+    COVERM_GENE_CATALOG(ch_clean_reads.combine(MMSEQS2.out.representatives))
+    GENE_CATALOG_MATRIX(
+        MMSEQS2.out.representatives,
+        COVERM_GENE_CATALOG.out.abundance.map { _meta, table -> table }.collect()
+    )
+
+    // ---- 11. Per-sample gene abundance table ----
     ch_gene_input = PRODIGAL.out.gff.join(SAMTOOLS_INDEX.out.bam_bai)
     GENE_ABUNDANCE(ch_gene_input)
 

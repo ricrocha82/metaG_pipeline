@@ -1,46 +1,23 @@
-// process GTDBTK_PREPARE_DB {
-//     // Your provided gtdbtk_db path is a .tar.gz archive; GTDB-Tk needs it
-//     // extracted, with GTDBTK_DATA_PATH pointing at the resulting directory.
-//     // Cached via storeDir so this only runs once, not on every invocation.
-//     label 'process_low'
-//     storeDir "${params.outdir}/gtdbtk_db_extracted"
-
-//     input:
-//     path db_archive
-
-//     output:
-//     path "gtdbtk_data", emit: db_dir
-
-//     script:
-//     """
-//     mkdir -p gtdbtk_data
-//     tar xvzf ${db_archive} -C gtdbtk_data --strip-components=1
-//     """
-// }
-
 process GTDBTK {
-    // CAUTION (flagged before building): gtdbtk_r95_data.tar.gz is from
-    // GTDB release 95 (~2020), but GTDB-Tk-2.1.1-PAS1117.sif is a v2.x
-    // binary, which expects reference package release ~207+. This will
-    // likely fail GTDB-Tk's internal version compatibility check. Verify
-    // with: `find /fs/project/PAS1117 -iname "*gtdbtk*"` for a newer
-    // release before relying on this step's output.
+    // GTDB-Tk 2.6.1 with GTDB release 226. From 2.4 the ANI screen uses the
+    // skani sketches in the reference package, so no --mash_db is needed.
     tag "$meta.id"
     label 'process_high'
-    publishDir "${params.outdir}/04_gtdbtk/${meta.id}", mode: 'copy'
+    publishDir { "${params.outdir}/05_gtdbtk/${meta.id}" }, mode: 'copy'
 
-    container "/fs/project/PAS1117/modules/singularity/GTDB-Tk-2.1.1-PAS1117.sif"
+    container "/fs/ess/PAS0822/modules/singularity/gtdbtk_2.6.1.sif"
 
     input:
     tuple val(meta), path(bins_dir)
-    val gtdbtk_db
+    path gtdbtk_db
 
     output:
     tuple val(meta), path("${meta.id}_gtdbtk"), emit: results
+    path "${meta.id}_gtdbtk/gtdbtk.*.summary.tsv", emit: summaries
 
     script:
     """
-    export GTDBTK_DATA_PATH=${gtdbtk_db}
+    export GTDBTK_DATA_PATH=\$(readlink -f ${gtdbtk_db})
     gtdbtk classify_wf \\
         --genome_dir ${bins_dir} \\
         --out_dir ${meta.id}_gtdbtk \\

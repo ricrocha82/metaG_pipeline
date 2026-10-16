@@ -4,9 +4,9 @@ process COVERM_MAPPING {
     // for depth calculation across all binners.
     tag "$meta.id"
     label 'process_high'
-    publishDir "${params.outdir}/00_coverm_mapping/${meta.id}", mode: 'copy', pattern: "*.tsv"
+    publishDir { "${params.outdir}/00_coverm_mapping/${meta.id}" }, mode: 'copy', pattern: "*.tsv"
 
-    container "/fs/project/PAS1117/modules/singularity/CoverM-0.7.0.sif"
+    container "/fs/ess/community/CoMS_microbiome_tools/sif-apps_staging/coverm/0.7.0/coverm_0.7.0_miniconda24.sif"
 
     input:
     tuple val(meta), path(assembly), path(reads1), path(reads2)
@@ -28,21 +28,21 @@ process COVERM_MAPPING {
     """
 }
 
-process SAMTOOLS_SORT_INDEX {
+process SAMTOOLS_INDEX {
+    // CoverM's cached BAM is already coordinate-sorted; it only needs an index.
     tag "$meta.id"
     label 'process_low'
 
-    container "/fs/project/PAS1117/modules/singularity/SAMtools-1.23.1.sif"
+    container "/fs/ess/community/CoMS_microbiome_tools/sif-apps_staging/samtools/1.17/samtools_1.17-2023-06.sif"
 
     input:
     tuple val(meta), path(bam)
 
     output:
-    tuple val(meta), path("${meta.id}.sorted.bam"), path("${meta.id}.sorted.bam.bai"), emit: bam_bai
+    tuple val(meta), path(bam), path("*.bai"), emit: bam_bai
 
     script:
     """
-    samtools sort -@ ${task.cpus} -o ${meta.id}.sorted.bam ${bam}
-    samtools index ${meta.id}.sorted.bam
+    samtools index ${bam}
     """
 }

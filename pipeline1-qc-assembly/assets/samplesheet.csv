@@ -1,4 +1,5 @@
 sample,short_reads_1,short_reads_2
+PH_101_H,/fs/ess/PAS0822/pp_run2/merge_run/merged_fastq/PH_101_H_R1.fastq.gz,/fs/ess/PAS0822/pp_run2/merge_run/merged_fastq/PH_101_H_R2.fastq.gz
 PH_101_S,/fs/ess/PAS0822/pp_run2/merge_run/merged_fastq/PH_101_S_R1.fastq.gz,/fs/ess/PAS0822/pp_run2/merge_run/merged_fastq/PH_101_S_R2.fastq.gz
 PH_102_H,/fs/ess/PAS0822/pp_run2/merge_run/merged_fastq/PH_102_H_R1.fastq.gz,/fs/ess/PAS0822/pp_run2/merge_run/merged_fastq/PH_102_H_R2.fastq.gz
 PH_102_S,/fs/ess/PAS0822/pp_run2/merge_run/merged_fastq/PH_102_S_R1.fastq.gz,/fs/ess/PAS0822/pp_run2/merge_run/merged_fastq/PH_102_S_R2.fastq.gz

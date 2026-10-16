@@ -1,169 +1,129 @@
 #!/usr/bin/env nextflow
 /*
- * pipeline2-binning-mags: steps 10-14, now with cross-sample dereplication.
+ * pipeline2-binning-mags
  *
- * Per-sample (unchanged): mapping -> binning (4 binners) -> DAS_Tool -> CheckM2
- * Cross-sample (new):     pool all samples' bins + CheckM2 scores -> dRep
- *                         -> GTDB-Tk (once) -> CoverM genome matrix (once)
+ * Per sample:  CoverM mapping -> MetaBAT2 / SemiBin2 / COMEBin -> Binette
+ * Pooled:      all samples' Binette bins -> dRep -> CheckM2 (final)
+ *              -> GTDB-Tk -> CoverM MAG x sample abundance matrix
+ *              -> DRAM annotation (per MAG) -> merge -> distill
  *
- * Steps:
- *   1. CoverM                 - mapping (per-sample)
- *   2. MetaBAT2/COMEBin/SemiBin2/VAMB - binning (per-sample, 4 binners) # removed for now
- *   3. DAS_Tool                - bin refinement (per-sample)
- *   4. CheckM2                  - bin quality (per-sample, feeds dRep)
- *   5. dRep                      - cross-sample dereplication
- *   6. CheckM2 (final)            - quality report on dereplicated MAG set
- *   7. GTDB-Tk                     - MAG taxonomy (once, on dereplicated set)
- *   8. CoverM genome matrix          - MAG abundance across all samples (once)
+ * Input is the pipeline2_samplesheet.csv written by pipeline1-qc-assembly
+ * (sample,assembly,short_reads_1,short_reads_2).
  */
 
 nextflow.enable.dsl = 2
 
-include { COVERM_MAPPING; SAMTOOLS_SORT_INDEX      } from './modules/coverm_mapping.nf'
+include { COVERM_MAPPING; SAMTOOLS_INDEX             } from './modules/coverm_mapping.nf'
 include { COUNT_CONTIGS; METABAT2; COMEBIN; SEMIBIN2 } from './modules/binning.nf'
-// include { METABAT2; COMEBIN; SEMIBIN2; VAMB          } from './modules/binning.nf'
-include { FASTA_TO_CONTIG2BIN as FASTA_TO_CONTIG2BIN_METABAT2 } from './modules/dastool.nf'
-include { FASTA_TO_CONTIG2BIN as FASTA_TO_CONTIG2BIN_COMEBIN   } from './modules/dastool.nf'
-include { FASTA_TO_CONTIG2BIN as FASTA_TO_CONTIG2BIN_SEMIBIN2  } from './modules/dastool.nf'
-// include { DASTOOL                                                } from './modules/dastool.nf'
-include { METAWRAP_REFINE                                       } from './modules/metawrap.nf'
-include { CHECKM2_DOWNLOAD_DB; CHECKM2_FINAL; CHECKM2   } from './modules/checkm2.nf'
-include { POOL_BINS; POOL_CHECKM2_GENOMEINFO             } from './modules/pool_bins.nf'
-include { DREP                                            } from './modules/drep.nf'
-include { GTDBTK                        } from './modules/gtdbtk.nf'
-// include { GTDBTK_PREPARE_DB; GTDBTK                        } from './modules/gtdbtk.nf'
-include { COVERM_GENOME_MATRIX                              } from './modules/coverm_genome.nf'
-include { CHECKM2_SING as CHECKM2_SING_METABAT2 } from './modules/checkm2.nf'
-include { CHECKM2_SING as CHECKM2_SING_SEMIBIN2 } from './modules/checkm2.nf'
-include { CHECKM2_SING as CHECKM2_SING_COMEBIN  } from './modules/checkm2.nf'
+include { BINETTE; MERGE_INPUT_BIN_QUALITY           } from './modules/binette.nf'
+include { POOL_BINS; POOL_GENOMEINFO                 } from './modules/pool_bins.nf'
+include { DREP                                       } from './modules/drep.nf'
+include { CHECKM2_FINAL                              } from './modules/checkm2.nf'
+include { GTDBTK                                     } from './modules/gtdbtk.nf'
+include { COVERM_GENOME_MATRIX                       } from './modules/coverm_genome.nf'
+include { DRAM_ANNOTATE; DRAM_MERGE; DRAM_DISTILL    } from './modules/dram.nf'
 
 workflow {
 
-    // ---- 0. Input samplesheet: sample,assembly,short_reads_1,short_reads_2 ----
-    ch_input = Channel
+    // ---- 0. Validate parameters and samplesheet before anything runs ----
+    if (!params.input) error "Missing --input (pipeline1's pipeline2_samplesheet.csv: sample,assembly,short_reads_1,short_reads_2)"
+
+    def sample_ids = file(params.input, checkIfExists: true).splitCsv(header: true).collect { row -> row.sample }
+    def duplicated_ids = sample_ids.countBy { sample_id -> sample_id }.findAll { _sample_id, count -> count > 1 }.keySet()
+    if (duplicated_ids) error "Duplicated sample IDs in ${params.input}: ${duplicated_ids.join(', ')}"
+
+    file(params.comebin_simclr_patch, checkIfExists: true)
+    file(params.dram_db, checkIfExists: true)
+    ch_checkm2_db = channel.value(file(params.checkm2_db, checkIfExists: true))
+    ch_gtdbtk_db  = channel.value(file(params.gtdbtk_db, checkIfExists: true))
+
+    ch_input = channel
         .fromPath(params.input)
         .splitCsv(header: true)
         .map { row ->
             def meta = [id: row.sample]
-            [meta, file(row.assembly), file(row.short_reads_1), file(row.short_reads_2)]
+            [
+                meta,
+                file(row.assembly, checkIfExists: true),
+                file(row.short_reads_1, checkIfExists: true),
+                file(row.short_reads_2, checkIfExists: true)
+            ]
         }
 
-    // ---- 1. Mapping (per-sample) ----
+    // ---- 1. Mapping (per sample) ----
     COVERM_MAPPING(ch_input)
-    SAMTOOLS_SORT_INDEX(COVERM_MAPPING.out.bam)
+    SAMTOOLS_INDEX(COVERM_MAPPING.out.bam)
 
-    ch_assembly = ch_input.map { meta, asm, r1, r2 -> [meta, asm] }
-    ch_binning_input = ch_assembly.join(SAMTOOLS_SORT_INDEX.out.bam_bai)
+    ch_assembly = ch_input.map { meta, assembly, _reads1, _reads2 -> [meta, assembly] }
+    ch_binning_input = ch_assembly.join(SAMTOOLS_INDEX.out.bam_bai)
 
-    // ---- 2. Binning (per-sample, 4 binners, parallel) ----
+    // ---- 2. Binning (per sample, 3 binners in parallel) ----
     METABAT2(ch_binning_input)
-    // COMEBIN(ch_binning_input)
-    SEMIBIN2(ch_binning_input)
-    // VAMB(ch_binning_input)
 
-    // COMEBin's marker-gene seeding step is unreliable below
-    // params.comebin_min_contigs contigs (can yield zero detected seeds,
-    // producing zero bins regardless of other tuning). Check contig count
-    // up front and only submit qualifying samples to COMEBin at all --
-    // avoids burning a SLURM job on a predictably-failing run.
+    SEMIBIN2(ch_binning_input)
+
+    // COMEBin's marker-gene seeding is unreliable below
+    // params.comebin_min_contigs contigs, so small assemblies are not
+    // submitted at all and are refined from MetaBAT2 + SemiBin2 only.
     COUNT_CONTIGS(ch_binning_input)
 
-    ch_comebin_branched = COUNT_CONTIGS.out.counted
-        .map { meta, assembly, bam, bai, n_contigs_file ->
+    ch_comebin_input = COUNT_CONTIGS.out.counted
+        .filter { meta, _assembly, _bam, _bai, n_contigs_file ->
             def n_contigs = n_contigs_file.text.trim().toInteger()
-            [meta, assembly, bam, bai, n_contigs]
+            if (n_contigs < params.comebin_min_contigs) {
+                log.warn "Skipping COMEBin for ${meta.id}: ${n_contigs} contigs (< ${params.comebin_min_contigs})"
+            }
+            n_contigs >= params.comebin_min_contigs
         }
-        .branch { meta, assembly, bam, bai, n_contigs ->
-            run_comebin:  n_contigs >= params.comebin_min_contigs
-            skip_comebin: true
+        .map { meta, assembly, bam, bai, _n_contigs_file -> [meta, assembly, bam, bai] }
+
+    COMEBIN(ch_comebin_input)
+
+    // ---- 3. Bin refinement (per sample) ----
+    // COMEBin is missing for skipped or failed samples (errorStrategy
+    // 'ignore'), so it is joined with remainder and dropped when absent.
+    ch_bin_sets = METABAT2.out.bins
+        .join(SEMIBIN2.out.bins)
+        .join(COMEBIN.out.bins, remainder: true)
+        .map { meta, metabat2_bins, semibin2_bins, comebin_bins ->
+            [meta, [metabat2_bins, semibin2_bins, comebin_bins].findAll { bins -> bins != null }]
         }
 
-    COMEBIN(
-        ch_comebin_branched.run_comebin.map { meta, assembly, bam, bai, n -> [meta, assembly, bam, bai] }
-    )
+    BINETTE(ch_assembly.join(ch_bin_sets), ch_checkm2_db)
+    MERGE_INPUT_BIN_QUALITY(BINETTE.out.input_quality)
 
-    ch_comebin_skipped = ch_comebin_branched.skip_comebin.map { meta, assembly, bam, bai, n ->
-        def empty_dir = file("${workDir}/comebin_skipped_${meta.id}")
-        empty_dir.mkdirs()
-        log.warn "Skipping COMEBin for ${meta.id}: only ${n} contigs (< ${params.comebin_min_contigs}) -- known marker-gene seeding limitation, refining from MetaBAT2 + SemiBin2 only"
-        [meta, empty_dir]
-    }
+    // ---- 4. Cross-sample dereplication ----
+    POOL_BINS(BINETTE.out.bins.map { _meta, bins -> bins }.collect())
+    POOL_GENOMEINFO(BINETTE.out.quality.map { _meta, report -> report }.collect())
+    DREP(POOL_BINS.out.bins, POOL_GENOMEINFO.out.genome_info)
 
-    ch_comebin_final = COMEBIN.out.bins.mix(ch_comebin_skipped)
+    // // ---- 5. Final quality report on the dereplicated MAG set ----
+    CHECKM2_FINAL(DREP.out.representatives, ch_checkm2_db)
 
-    // ---- 2.1. Bin quality (per-sample) ----
-    if (!params.checkm2_db) {
-        CHECKM2_DOWNLOAD_DB()
-        ch_checkm2_db = CHECKM2_DOWNLOAD_DB.out.db
-    } else {
-        ch_checkm2_db = Channel.fromPath(params.checkm2_db, checkIfExists: true)
-    }
-    // CHECKM2(DASTOOL.out.bins, ch_checkm2_db.first())
-
-    ch_metabat2_raw = METABAT2.out.bins.map     { meta, dir -> [meta + [binner: 'metabat2'], dir] }
-    ch_semibin2_raw = SEMIBIN2.out.bins.map     { meta, dir -> [meta + [binner: 'semibin2'], dir] }
-    ch_comebin_raw  = ch_comebin_final.map      { meta, dir -> [meta + [binner: 'comebin'],  dir] }
-
-    CHECKM2_SING_METABAT2(ch_metabat2_raw, ch_checkm2_db.first())
-    CHECKM2_SING_SEMIBIN2(ch_semibin2_raw, ch_checkm2_db.first())
-    CHECKM2_SING_COMEBIN(ch_comebin_raw,  ch_checkm2_db.first())
-
-    // ---- 3. Bin refinement (per-sample, DAS_Tool consolidates all 4 sets) ----
-    // FASTA_TO_CONTIG2BIN_METABAT2(METABAT2.out.bins.map { meta, dir -> [meta, dir, 'metabat2'] })
-    // FASTA_TO_CONTIG2BIN_COMEBIN(COMEBIN.out.bins.map { meta, dir -> [meta, dir, 'comebin'] })
-    // FASTA_TO_CONTIG2BIN_SEMIBIN2(SEMIBIN2.out.bins.map { meta, dir -> [meta, dir, 'semibin2'] })
-
-    ch_refine_input = METABAT2.out.bins
-    .join(ch_comebin_final, remainder: true)
-    // .join(COMEBIN.out.bins, remainder: true)
-    .join(SEMIBIN2.out.bins, remainder: true)
-    .map { meta, metabat2_dir, comebin_dir, semibin2_dir ->
-        def empty_dir = file("${workDir}/empty_bins_${meta.id}")
-        empty_dir.mkdirs()
-        [
-            meta,
-            metabat2_dir ?: empty_dir,
-            comebin_dir  ?: empty_dir,
-            semibin2_dir ?: empty_dir
-        ]
-    }
-
-    // ---- 4. Bin refiment + quality (per-sample, feeds dRep's genomeInfo) ----
-    METAWRAP_REFINE(ch_refine_input)
-    // DASTOOL(ch_dastool_input)
-    CHECKM2(METAWRAP_REFINE.out.bins, ch_checkm2_db.first())
-    // CHECKM2(DASTOOL.out.bins, ch_checkm2_db.first())
-
-    // ---- 5. Cross-sample dereplication ----
-    ch_all_bin_dirs = METAWRAP_REFINE.out.bins.map { meta, dir -> dir }.collect()
-    // ch_all_bin_dirs = DASTOOL.out.bins.map { meta, dir -> dir }.collect()
-    ch_all_checkm2  = CHECKM2.out.results.map { meta, tsv -> tsv }.collect()
-
-    POOL_BINS(ch_all_bin_dirs)
-    POOL_CHECKM2_GENOMEINFO(ch_all_checkm2)
-    DREP(POOL_BINS.out.bins, POOL_CHECKM2_GENOMEINFO.out.genome_info)
-
-    // ---- 6. Final quality report on the dereplicated MAG set ----
-    CHECKM2_FINAL(DREP.out.representatives, ch_checkm2_db.first())
-
-    // ---- 7. MAG taxonomy (once, on dereplicated set) ----
-    // ch_gtdbtk_archive = Channel.fromPath(params.gtdbtk_db, checkIfExists: true)
-    // ch_gtdbtk_db_dir = Channel.fromPath(params.gtdbtk_db, checkIfExists: true, type: 'dir')
+    // ---- 6. MAG taxonomy ----
     GTDBTK(
-        DREP.out.representatives.map { dir -> [[id: 'dereplicated_mags'], dir] },
-        params.gtdbtk_db
+        DREP.out.representatives.map { mags -> [[id: 'dereplicated_mags'], mags] },
+        ch_gtdbtk_db
     )
-    // GTDBTK_PREPARE_DB(ch_gtdbtk_archive)
-    // GTDBTK(
-    //     DREP.out.representatives.map { dir -> [[id: 'dereplicated_mags'], dir] },
-    //     GTDBTK_PREPARE_DB.out.db_dir.first()
-    // )
 
-    // ---- 8. MAG abundance matrix (once, all samples vs. dereplicated set) ----
+    // ---- 7. MAG abundance matrix (all samples vs. dereplicated set) ----
     ch_coupled_reads = ch_input
-        .map { meta, asm, r1, r2 -> "${r1} ${r2}" }
+        .map { _meta, _assembly, reads1, reads2 -> "${reads1} ${reads2}" }
         .collect()
-        .map { it.join(' ') }
+        .map { read_pairs -> read_pairs.join(' ') }
 
     COVERM_GENOME_MATRIX(DREP.out.representatives, ch_coupled_reads)
+
+    // ---- 8. MAG functional annotation (DRAM, one job per MAG) ----
+    ch_mags = DREP.out.representatives
+        .flatMap { mags -> files("${mags}/*.fa") }
+        .map { mag -> [[id: mag.baseName], mag] }
+
+    DRAM_ANNOTATE(
+        ch_mags,
+        GTDBTK.out.summaries.collect(),
+        CHECKM2_FINAL.out.results
+    )
+    DRAM_MERGE(DRAM_ANNOTATE.out.annotations.map { _meta, annotations -> annotations }.collect())
+    DRAM_DISTILL(DRAM_MERGE.out.merged)
 }

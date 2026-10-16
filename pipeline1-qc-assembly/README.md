@@ -77,16 +77,73 @@ nextflow run main.nf -profile singularity,slurm \
 
 ## SingleM steps
 
-Matches the official two-step workflow
-(https://wwood.github.io/singlem/tools/prokaryotic_fraction) exactly:
-1. `SINGLEM_PIPE` -- runs `singlem pipe` to produce a taxonomic profile.
-2. `SINGLEM_PROKARYOTIC_FRACTION` -- runs `singlem prokaryotic_fraction`
-   on that profile (this subcommand was previously named
-   `microbial_fraction` in older SingleM docs/versions).
+1. `SINGLEM_PIPE` -- runs `singlem pipe` to produce an OTU table and a taxonomic profile.
+2. `SINGLEM_READ_FRACTION` -- `singlem read_fraction` (the CoMS image is
+   SingleM 1.0.0beta5; newer releases call this `prokaryotic_fraction`),
+   giving the fraction of reads that are bacterial/archaeal.
+   Works around a beta5 bug where `read_fraction` and `pipe` derive
+   different sample names from the same read file.
 
-Both steps run with no `--metapackage` argument, relying on
-`SingleM-0.13.2.sif`'s own default (unverified whether it has one --
-see item 3 above).
+## Gene catalog (`10_gene_catalog/`)
+
+
+```
+     Prodigal genes, all samples (.fna + .gff)
+                      |
+                      v
+          MMseqs2 (95% nucleotide identity)
+                      |
+      +---------------+----------------------------+
+      |                                            |
+      v                                            v
+Nonredundant gene catalog (.fna)          Cluster table (rep -> member)
+      |                                            |  + Prodigal .gff
+      +-------------------+                        v
+      |                   |               Membership table
+      v                   v               (gene -> rep, contig, sample)
+   CoverM            eggNOG-mapper                 |
+ (+ clean reads,     (--itype CDS)                 |
+  per sample)             |                        |
+      |                   v                        |
+      v           Functional annotation            |
+Gene x sample             |                        |
+matrices                  |                        |
+(counts, CPM, coverage)   |                        |
+      |                   |                        |
+      +-------------------+------------------------+
+                          |
+                          v
+            Pipeline2 (+ MAGs, GTDB-Tk, CheckM2)
+                          |
+                          v
+                MAG-linked master table
+```
+
+Follows Maranga et al. 2023 (mSystems, doi:10.1128/msystems.01178-22):
+
+1. `MMSEQS2` -- complete Prodigal genes (`partial=00`) from all samples,
+   clustered at 95% nucleotide identity (90% coverage of each member,
+   greedy like CD-HIT `-c 0.95 -aS 0.9`) into a non-redundant catalog:
+   `mmseqs2/gene_catalog_rep_seq.fasta` and `mmseqs2/gene_catalog_cluster.tsv`
+   (representative, member). Partial genes are left out, as in the paper.
+2. `EGGNOG` + `EGGNOG_MERGE` -- eggNOG-mapper 2.1.12 (DB 5.0.2) annotates the
+   representatives in parallel chunks of `--eggnog_chunk_size` genes
+   (default 50000), with the paper's options (`--itype CDS --translate
+   --go_evidence non-electronic`, same e-value/score/coverage thresholds),
+   merged into `eggnog/gene_catalog.emapper.annotations`.
+3. `GENE_CATALOG_MEMBERSHIP` -- `membership/gene_catalog_membership.tsv`:
+   one row per complete gene with its representative, contig, source
+   sample and coordinates. Used by pipeline2 to link genes to MAGs.
+4. `COVERM_GENE_CATALOG` + `GENE_CATALOG_MATRIX` -- each sample's clean
+   reads mapped to the catalog (reads at >= 95% identity), merged into
+   gene x sample matrices in `matrices/`: read counts, CPM (counts per
+   million reads mapped to the catalog, not length-normalized), mean
+   coverage, and TPM (length-weighted, comparable to the paper's CPM).
+
+All catalog files use the same gene IDs (the representative's
+`<contig>_<n>`), so annotation, membership and abundance join directly.
+Scripts used by these steps are in `bin/` (must be executable).
+
 
 ## Output -> Pipeline 2 handoff
 

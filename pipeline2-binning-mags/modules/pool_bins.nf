@@ -1,7 +1,7 @@
 process POOL_BINS {
-    // Collects every sample's DAS_Tool bins into one flat directory for
-    // dRep. Bin filenames already carry their sample prefix (DAS_Tool's
-    // -o ${meta.id} flag), so no collision risk pooling across samples.
+    // Collects every sample's Binette bins into one flat directory for dRep.
+    // Bin names already carry the sample prefix (Binette --prefix), so there
+    // is no collision risk pooling across samples.
     label 'process_low'
 
     input:
@@ -19,15 +19,15 @@ process POOL_BINS {
     """
 }
 
-process POOL_CHECKM2_GENOMEINFO {
-    // Reformats all samples' CheckM2 quality_report.tsv files into the
-    // single genomeInfo.csv (genome,completeness,contamination) dRep
-    // requires, with "genome" values matching pooled_bins/*.fa exactly.
+process POOL_GENOMEINFO {
+    // Builds the genomeInfo.csv dRep needs (genome,completeness,contamination)
+    // from Binette's quality reports, which are CheckM2 scores. Columns are
+    // looked up by header name; "genome" must match pooled_bins/*.fa exactly.
     label 'process_low'
-    publishDir "${params.outdir}/03_checkm2", mode: 'copy'
+    publishDir "${params.outdir}/03_drep", mode: 'copy'
 
     input:
-    path checkm2_results
+    path quality_reports
 
     output:
     path "genomeInfo.csv", emit: genome_info
@@ -35,8 +35,9 @@ process POOL_CHECKM2_GENOMEINFO {
     script:
     """
     echo "genome,completeness,contamination" > genomeInfo.csv
-    for f in ${checkm2_results}; do
-        tail -n +2 "\$f" | awk -F'\\t' -v OFS=',' '{print \$1".fa", \$2, \$3}' >> genomeInfo.csv
-    done
+    awk -F'\\t' -v OFS=',' '
+        FNR == 1 { for (i = 1; i <= NF; i++) col[\$i] = i; next }
+        { print \$col["name"] ".fa", \$col["completeness"], \$col["contamination"] }
+    ' ${quality_reports} >> genomeInfo.csv
     """
 }
